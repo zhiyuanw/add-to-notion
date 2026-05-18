@@ -427,8 +427,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 24,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Built Popup save UI with current-page status, selected target display, background ClipTask start, running progress, duplicate-save progress reuse, and terminal result summaries. Browser verification still needs manual/dev-browser follow-up because no browser MCP tool was available in this session."
     },
     {
       "id": "US-025",

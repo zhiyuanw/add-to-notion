@@ -26,6 +26,7 @@
 - Full clipped-page writes use `writeClippedNotionPage` in `src/notion/writer.ts`; it creates the page first, then appends metadata/content blocks in batches of at most 100.
 - Background task state lives in `src/background/clipTaskRunner.ts`; use `startBackgroundClipTask` for one active non-terminal task and startup recovery.
 - Full save orchestration lives in `src/background/savePipeline.ts`; create operations with `createSaveConfluencePageOperation` so detection, fetch, parse, convert, asset processing, and Notion writes share one terminal summary.
+- Popup UI logic can be tested with `happy-dom` and exported `mountPopupPage` from `src/popup/index.ts`; background save starts via `clip.saveCurrentPage` runtime messages.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -339,5 +340,20 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
   - Use `createSaveConfluencePageOperation` as the operation passed to `startBackgroundClipTask` when wiring popup save actions.
   - Pipeline tests should seed typed storage state and inject one shared `fetcher` so Confluence, asset, and Notion calls stay deterministic.
   - Success summaries count the metadata toggle appended by `writeClippedNotionPage`; pre-write failure summaries only count content blocks produced before the failure.
+
+---
+
+## 2026-05-18 20:48 - US-024
+
+- Implemented the Popup save UI with current-tab Confluence support status, selected Notion target display, save button gating, running ClipTask progress, duplicate-save progress reuse, and terminal success/failure summaries.
+- Wired the background service worker to handle `clip.saveCurrentPage` runtime messages by starting `startBackgroundClipTask` with `createSaveConfluencePageOperation`.
+- Added `happy-dom` tests for supported page status, missing target blocking, background save start, running task display, duplicate save behavior, and terminal result summaries.
+- Verified `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Browser verification was not performed because no browser testing MCP/dev-browser tool is available in this session; manual extension popup verification is still recommended.
+- Files changed: `src/popup/index.ts`, `src/background/index.ts`, `src/tests/popupSave.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Popup UI can expose `mountPopupPage` from `src/popup/index.ts` so DOM behavior is testable under `happy-dom`.
+  - Popup save actions should call the background through the `clip.saveCurrentPage` runtime message instead of running the full pipeline in the popup.
+  - Browser verification criteria still need manual or dev-browser follow-up when browser tools are unavailable.
 
 ---
