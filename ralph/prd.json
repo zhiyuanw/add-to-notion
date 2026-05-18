@@ -1,0 +1,485 @@
+{
+  "project": "AddToNotion",
+  "branchName": "ralph/confluence-to-notion-chrome-extension",
+  "description": "Confluence-to-Notion Chrome Extension V1 - manually save one Confluence Server/Data Center page into a selected Notion database or page with storage-format conversion and asset upload.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Scaffold MV3 TypeScript extension",
+      "description": "As a developer, I need a Chrome Extension MV3 project scaffold so future stories can add app logic safely.",
+      "acceptanceCriteria": [
+        "Add package manifest and lockfile for a TypeScript Chrome Extension build",
+        "Add MV3 manifest with popup, options page, background service worker, storage permission, notifications permission, tabs permission, activeTab permission, and optional host permissions empty by default",
+        "Add source folders for popup, options, background, shared domain, Confluence, Notion, converter, assets, and tests",
+        "Add scripts for build, typecheck, and test",
+        "Build passes",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Define domain model and storage schema",
+      "description": "As a developer, I need typed domain entities and persisted settings contracts that match the spec.",
+      "acceptanceCriteria": [
+        "Define types for ConfluencePageRef, ConfluencePageData, NotionTarget, ClipTask, AssetRef, and Degradation",
+        "Define ClipTask statuses exactly as idle, detecting, fetching, parsing, converting, uploading_assets, writing, succeeded, failed, cancelled",
+        "Define storage keys for Notion auth state, workspace info, default target, Confluence base URL, active ClipTask lock, and last terminal ClipTask summary",
+        "Add unit tests for ClipTask terminal status helpers and storage key constants",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Implement Chrome storage boundary helpers",
+      "description": "As a developer, I need storage helpers that keep secrets in chrome.storage.local and support logout cleanup rules.",
+      "acceptanceCriteria": [
+        "Implement typed read/write/remove helpers for chrome.storage.local",
+        "Notion access token and refresh token are stored only through local storage helpers",
+        "Logout cleanup removes Notion tokens, workspace info, default target, and last terminal ClipTask summary",
+        "Logout cleanup does not remove Confluence base URL",
+        "Add unit tests using mocked chrome.storage.local",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Validate and normalize Confluence base URL",
+      "description": "As a user, I need the extension to accept one Confluence base URL with optional context path and reject unsafe forms.",
+      "acceptanceCriteria": [
+        "Accept absolute http and https URLs with origin plus optional context path",
+        "Preserve context path and remove trailing slash during normalization",
+        "Reject URLs with query string, fragment, username, password, or unsupported scheme",
+        "Store only one active normalized Confluence base URL",
+        "Add unit tests for origin-only, context-path, trailing-slash, query, hash, credentials, and unsupported-scheme cases",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Request Confluence host permission",
+      "description": "As a user, I need the extension to request only the configured Confluence origin permission before using Confluence APIs.",
+      "acceptanceCriteria": [
+        "Implement host permission request using chrome.permissions.request for the normalized base URL origin only",
+        "Changing the base URL requests the new origin permission",
+        "Changing the base URL does not actively remove old origin permission",
+        "Detection and REST fetch code can check whether current origin permission exists",
+        "Add unit tests with mocked chrome.permissions",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Build Options UI for Confluence settings",
+      "description": "As a user, I want to configure my Confluence base URL and grant host permission from the options page.",
+      "acceptanceCriteria": [
+        "Options page has Confluence base URL input, validation error display, saved normalized URL display, and grant-permission action",
+        "Saving invalid URL shows validation message and does not persist it",
+        "Saving valid URL persists normalized URL and triggers host permission request flow",
+        "UI shows whether required host permission is granted",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Implement Notion OAuth launch and callback",
+      "description": "As a user, I need to authorize Notion through OAuth without pasting an integration token.",
+      "acceptanceCriteria": [
+        "Implement OAuth start flow using chrome.identity launch flow or equivalent MV3-compatible redirect flow",
+        "Exchange authorization code for access token, refresh token, workspace info, and integration bot metadata",
+        "Store Notion tokens only in chrome.storage.local",
+        "OAuth config records selected Notion API version and requested minimum scopes in code configuration",
+        "Add tests for token persistence and failed callback handling with mocked network calls",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Implement Notion token refresh and logout",
+      "description": "As a user, I need expired Notion tokens refreshed automatically and failed refreshes to require reauthorization.",
+      "acceptanceCriteria": [
+        "Refresh expired access token before Notion API calls when refresh token exists",
+        "On refresh failure, clear Notion auth state, workspace info, default target, and last terminal ClipTask summary",
+        "On logout, clear the same Notion state and keep Confluence base URL",
+        "Never expose Notion tokens to content scripts or popup messages",
+        "Add unit tests for successful refresh, failed refresh, and logout cleanup",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Discover Notion page and database targets",
+      "description": "As a user, I need to search accessible Notion pages and databases and select a default save target.",
+      "acceptanceCriteria": [
+        "Implement Notion target search/list API wrapper for accessible pages and databases only",
+        "Empty search/list result returns guidance to grant the integration access in Notion",
+        "Selecting a page target stores id, type page, and displayName",
+        "Selecting a database target reads database metadata and stores id, type database, displayName, and title property name or id",
+        "Add unit tests for page target, database target, empty list, and invalid target type",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Build Options UI for Notion settings",
+      "description": "As a user, I want to connect Notion, search targets, choose a default database or page, and logout.",
+      "acceptanceCriteria": [
+        "Options page shows Notion authorization status and connect/logout actions",
+        "Target picker lists searchable page and database targets returned by Notion target discovery",
+        "Database targets and page targets are both selectable and saved as default targets",
+        "Empty target list shows guidance to grant integration access in Notion",
+        "Logout clears Notion state in UI while keeping Confluence configuration visible",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Detect supported Confluence pages",
+      "description": "As a user, I need the extension to recognize supported pages only inside the configured Confluence base URL path.",
+      "acceptanceCriteria": [
+        "Detect /pages/viewpage.action?pageId={pageId} URLs and extract pageId",
+        "Detect /spaces/{SPACE}/pages/{pageId} URLs and extract pageId",
+        "Detect /display/{SPACE}/{Page+Title} URLs and use DOM metadata or bootstrap data for pageId when available",
+        "Reject URLs outside the normalized base URL path even when same origin",
+        "Reject detection when host permission is missing",
+        "Add unit tests for all supported URL forms and path-guard failures",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Fetch Confluence storage data",
+      "description": "As a user, I need the extension to fetch storage format and metadata through the Confluence REST API using browser session cookies.",
+      "acceptanceCriteria": [
+        "Fetch GET /rest/api/content/{pageId}?expand=body.storage,metadata.labels,version,space,children.attachment",
+        "Use fetch with credentials include and no cookies permission",
+        "Enforce normalized base URL path for REST content fetch",
+        "Map 401 and 403 to authentication or permission failure",
+        "Map 404 to page missing or inaccessible failure",
+        "Map 5xx and network errors to temporary Confluence failure",
+        "Add unit tests for request URL, credentials mode, path guard, response mapping, and metadata extraction",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Add request timeout and retry wrapper",
+      "description": "As a user, I need external requests bounded by per-request timeouts, limited retries, and the overall ClipTask timeout.",
+      "acceptanceCriteria": [
+        "Implement 30-second per-request timeout wrapper for Confluence, asset, and Notion requests",
+        "Retry network errors, HTTP 408, HTTP 429, and HTTP 5xx at most 2 times per request",
+        "Do not retry HTTP 400, 401, 403, or 404 unless explicitly configured for a specific API",
+        "Notion 429 retry uses response retry hints when available",
+        "Retry loop respects a caller-provided overall deadline",
+        "Add unit tests with fake timers for timeout, retryable status, non-retryable status, retry limit, and deadline exhaustion",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Parse Confluence storage XML safely",
+      "description": "As a developer, I need a safe XML parser that preserves Confluence namespaces and blocks external entity/resource loading.",
+      "acceptanceCriteria": [
+        "Parser preserves ac:* and ri:* namespace-qualified nodes in the internal AST",
+        "Parser does not execute XML, HTML, SVG, scripts, event handlers, or macro content",
+        "External entities are not resolved and no external request is made",
+        "Unsupported raw HTML is converted to recoverable plain text or a Degradation",
+        "Whole-document XML parse failure fails the task with a parse error",
+        "Add unit tests for simple XML, namespace preservation, unsupported raw HTML, malformed XML, and external entity blocking",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Convert basic Confluence content to Notion blocks",
+      "description": "As a user, I need ordinary Confluence content converted directly into Notion blocks without Markdown as the main intermediate format.",
+      "acceptanceCriteria": [
+        "Convert headings, paragraphs, links, ordered lists, unordered lists, and nested lists to Notion blocks",
+        "Convert bold, italic, strikethrough, inline code, and best-effort colored text to Notion rich_text",
+        "Convert basic tables to Notion table blocks when supported",
+        "Flatten or degrade complex tables without failing the whole task",
+        "Converter does not use Markdown as the main intermediate format",
+        "Add fixture test for simple profile covering headings, paragraphs, links, lists, basic table, and inline formatting",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Convert supported Confluence macros",
+      "description": "As a user, I need common Confluence macros preserved with Notion-native semantics where possible.",
+      "acceptanceCriteria": [
+        "Convert mermaid macro to Notion code block with language mermaid when accepted",
+        "When mermaid language is rejected, fall back to plain-text code and add warning",
+        "Convert code and noformat macros to code blocks preserving text and best-effort language",
+        "Convert info, note, tip, and warning macros to callout blocks with preserved body",
+        "Convert expand macro to toggle block with preserved title and recursive child conversion where possible",
+        "Convert unknown macro to callout text Unsupported Confluence macro: {name} plus recoverable body text without macro parameters",
+        "Add macro-heavy fixture tests for all required macro mappings and unknown macro fallback",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Extract and classify Confluence assets",
+      "description": "As a user, I need images, attachments, and Draw.io render assets identified before upload or fallback.",
+      "acceptanceCriteria": [
+        "Extract asset URLs from storage XML image nodes and attachment metadata",
+        "Classify Confluence-hosted asset URLs as same-origin with the configured Confluence base URL",
+        "Allow same-origin referenced assets outside the normalized base URL path",
+        "Classify cross-origin external image URLs without using Confluence credentials",
+        "Extract Draw.io rendered image candidate and optional source link when available",
+        "Add unit tests for same-origin in-path assets, same-origin outside-path assets, cross-origin assets, attachment metadata, and Draw.io extraction",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Download and upload Notion assets",
+      "description": "As a user, I need Confluence-hosted assets downloaded by the browser and uploaded to Notion with safe limits and fallbacks.",
+      "acceptanceCriteria": [
+        "Download same-origin Confluence-hosted assets with credentials include",
+        "Never download cross-origin assets with Confluence credentials",
+        "Upload supported files to Notion File Upload API with concurrency limit 3",
+        "Skip files larger than 20 MB and preserve original Confluence link as text or bookmark/link block with warning",
+        "Treat upload not attached within 1 hour as upload failure and preserve source link with warning",
+        "Do not persist Notion-hosted uploaded file URLs as durable references",
+        "Add unit tests for concurrency 3, oversized skip, download failure, upload failure, expired attach window, and credential mode",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Render image and Draw.io fallbacks",
+      "description": "As a user, I need asset failures to degrade locally without adding noisy per-image error callouts.",
+      "acceptanceCriteria": [
+        "Replace uploaded assets with Notion-compatible image, file, video, audio, or pdf block references",
+        "Cross-origin external image URLs are not uploaded and become Notion external image blocks only when directly usable",
+        "Unusable cross-origin image URLs become ordinary link text or bookmark/link blocks",
+        "Failed Confluence-hosted image uploads do not become Notion external image blocks pointing at internal URLs",
+        "Draw.io import uses rendered image when available and preserves optional source link when available",
+        "No per-image error callout is added for failed assets; warning count increments instead",
+        "Add image-heavy fixture tests for attachment images, external images, broken image, and more than one image batch",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "Create Notion pages for selected target",
+      "description": "As a user, I need each save to create a new Notion page under the selected database or page target.",
+      "acceptanceCriteria": [
+        "Database target creates a new page in the selected database using the saved title property name or id",
+        "Page target creates a new child page under the selected page",
+        "Created page title uses the Confluence page title without pageId, timestamp, or dedupe suffix",
+        "Writer does not query historical mappings, scan Notion for duplicates, or update old clipped pages",
+        "Stale database title property, schema, or target permission failure returns target-invalid guidance",
+        "Add unit tests for database target, page target, duplicate save behavior, and stale database target failure",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "Write metadata toggle and append blocks",
+      "description": "As a user, I need clipped pages to include Confluence metadata and content written within Notion API limits.",
+      "acceptanceCriteria": [
+        "Add Confluence metadata toggle at top of every clipped page",
+        "Metadata toggle includes Original URL, Confluence Base URL, Confluence Page ID, Confluence Space, Labels, Last Modified, and Last Clipped At",
+        "Database target does not create, modify, or depend on metadata database properties",
+        "Append blocks in batches of at most 100",
+        "On partial block append failure, do not archive, delete, clear, or reuse the partial Notion page",
+        "Partial write summary includes Notion page URL when available",
+        "Add unit tests for metadata toggle fields, 100-block batching, database property non-modification, and partial write behavior",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "Implement background ClipTask runner",
+      "description": "As a user, I need save work to run in the background and expose progress even when the popup closes.",
+      "acceptanceCriteria": [
+        "Run save operation in MV3 background service worker",
+        "Allow only one non-terminal ClipTask at a time",
+        "Duplicate save click while any task is non-terminal returns existing task progress instead of starting a new Notion page",
+        "Overall ClipTask timeout is 5 minutes from task start and releases the single-task lock on failure",
+        "Persist enough non-terminal ClipTask state for service worker startup detection",
+        "On service worker startup with a persisted non-terminal task, mark it failed, release the lock, and show retry guidance",
+        "Persist only the most recent terminal ClipTask summary and overwrite it on next terminal task",
+        "Add unit tests for state transitions, duplicate save, overall timeout, startup recovery, and last-summary retention",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "Orchestrate full save pipeline",
+      "description": "As a user, I need one save action to detect, fetch, parse, convert, upload assets, write Notion, and produce a terminal summary.",
+      "acceptanceCriteria": [
+        "Pipeline stages run in order: detecting, fetching, parsing, converting, uploading_assets, writing, succeeded or failed",
+        "Missing Notion auth, missing target, missing Confluence base URL, missing host permission, unsupported page, and Confluence auth failures fail early",
+        "Single macro, image, table, or asset degradation does not fail the whole task",
+        "Whole-page fetch failure, whole XML parse failure, Notion page creation failure, and exhausted append retry fail the task",
+        "Final summary includes taskId, source title and URL, Notion target, final status, elapsed time, block count, asset count, warning count, Notion page URL when created, and first failure reason",
+        "Add integration-style tests with mocked Confluence and Notion APIs for success with warnings, early failure, partial write, and repeated save creating new pages",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "Build popup save UI",
+      "description": "As a user, I want the popup to show current page status, target, save progress, and final result summary.",
+      "acceptanceCriteria": [
+        "Popup shows whether current tab is a supported configured Confluence page",
+        "Popup shows current Notion target and blocks save when no target is selected",
+        "Save button starts background ClipTask and does not depend on popup remaining open",
+        "While a task is running, popup shows existing task stage: fetch, parse, convert, upload images, or write",
+        "Duplicate save click shows existing progress and does not create a second task",
+        "Terminal result shows success or failure, warning count, and Notion page URL when available",
+        "Result copy makes clear that a new Notion page was created on successful save",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-025",
+      "title": "Add notifications and badge feedback",
+      "description": "As a user, I need completion, failure, and retry guidance visible even if the popup is closed.",
+      "acceptanceCriteria": [
+        "Show browser notification or extension badge on save success",
+        "Show browser notification or extension badge on save failure",
+        "Timeout failure notification includes retry guidance",
+        "Service worker startup recovery failure notification includes retry guidance",
+        "Notifications never include Notion tokens, refresh tokens, cookies, or authorization headers",
+        "Add unit tests for notification payload redaction and success/failure messages with mocked chrome.notifications or action badge APIs",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-026",
+      "title": "Add developer debug logging with redaction",
+      "description": "As a developer, I need structured local debug logs for troubleshooting without exposing secrets or adding debug export.",
+      "acceptanceCriteria": [
+        "Developer debug logs include stage start/end, Confluence fetch status, XML parse summary, macro count by type, asset upload summary, and Notion write batch summary",
+        "Logs redact access token, refresh token, cookie values, and full Notion authorization headers",
+        "V1 has no debug export UI, command, route, or storage export feature",
+        "Debug logging is disabled or quiet by default outside development mode",
+        "Add unit tests for redaction of token, cookie, and authorization header patterns",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-027",
+      "title": "Add release checklist verification tests",
+      "description": "As a developer, I need automated tests and fixtures that cover the spec's required V1 validation matrix.",
+      "acceptanceCriteria": [
+        "Add fixtures named simple, macro-heavy, and image-heavy using sanitized Confluence storage XML",
+        "Test matrix covers base URL normalization, supported page detection, host permission path guard, XML external entity blocking, required macro conversion, unknown macro fallback, asset concurrency, oversized assets, failed uploads, database and page targets, re-save behavior, append batching, duplicate save, logout retention, and service worker startup recovery",
+        "Test suite can run through the package test script",
+        "Build passes",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 27,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

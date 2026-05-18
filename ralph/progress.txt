@@ -1,0 +1,3 @@
+# Ralph Progress
+
+Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
