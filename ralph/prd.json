@@ -116,8 +116,8 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented Notion OAuth launch flow, callback handling, authorization code exchange, token/workspace persistence, OAuth config, and tests."
     },
     {
       "id": "US-008",

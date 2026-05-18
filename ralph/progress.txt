@@ -9,6 +9,7 @@
 - Normalize and validate Confluence base URLs through `src/confluence/baseUrl.ts`; store them via `saveConfluenceBaseUrl`.
 - Request and check Confluence host permissions through `src/confluence/permissions.ts`; permissions are origin-scoped, not context-path-scoped.
 - Options UI logic can be tested with `happy-dom` and exported mount/render helpers from `src/options/index.ts`.
+- Notion OAuth helpers live in `src/notion/oauth.ts`; inject `fetcher`, `now`, and `createState` in tests instead of relying on real network or time.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -89,5 +90,18 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Options UI can expose mount/render helpers from `src/options/index.ts` so DOM behavior is testable under `happy-dom` without a browser.
   - Current automated checks cover Options UI DOM behavior, but PRD browser verification criteria still require manual or dev-browser follow-up when browser tools are unavailable.
+
+---
+
+## 2026-05-18 18:31 - US-007
+
+- Implemented Notion OAuth launch flow using `chrome.identity.launchWebAuthFlow` with generated state and MV3 redirect URL support.
+- Added Notion OAuth callback parsing, authorization-code token exchange, OAuth configuration for Notion API version/scopes, and token/workspace persistence through `chrome.storage.local` helpers.
+- Added mocked unit tests for OAuth config, redirect URL creation, authorization URL generation, callback success/failure handling, token exchange, persistence, failed exchange, and missing client configuration.
+- Verified `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Files changed: `src/notion/index.ts`, `src/notion/oauth.ts`, `src/tests/notionOAuth.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Notion OAuth code supports dependency injection for `fetcher`, `now`, and `createState`, which keeps tests deterministic without real network calls.
+  - The default OAuth client ID is a placeholder; real builds must provide configured Notion OAuth app details before interactive authorization can run.
 
 ---
