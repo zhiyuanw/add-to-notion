@@ -19,6 +19,7 @@
 - Parse Confluence storage XML through `src/confluence/storageParser.ts`; it preserves namespace-qualified nodes, blocks external entities, degrades unsafe raw HTML, and returns typed parse failures.
 - Convert supported Confluence storage AST content through `src/converter/index.ts`; it emits Notion block objects directly instead of using Markdown.
 - Macro conversion belongs in `src/converter/index.ts` by detecting `ac:structured-macro`; macro-heavy fixtures should cover supported and unknown macros.
+- Asset discovery lives in `src/assets/index.ts`; it consumes parsed storage AST plus `ConfluencePageData.attachments` and classifies same-origin assets independently from context-path guards.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -234,5 +235,19 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Macro conversion extends the existing AST-to-Notion-block converter path in `src/converter/index.ts`; keep avoiding Markdown as an intermediate format.
   - Tests for converter features should parse sanitized storage XML with `parseConfluenceStorageXml` before calling `convertConfluenceStorageToNotionBlocks`.
+
+---
+
+## 2026-05-18 19:38 - US-017
+
+- Implemented Confluence asset extraction for storage XML image nodes, attachment metadata, and Draw.io macros.
+- Added same-origin/cross-origin classification, configured-base-path reporting, and Confluence credential eligibility for extracted assets.
+- Added unit tests covering same-origin in-path images, same-origin outside-path images, cross-origin images, attachment metadata, and Draw.io rendered image/source links.
+- Verified `npm run build`, `npm run typecheck`, and `npm test` pass.
+- Files changed: `src/assets/index.ts`, `src/tests/assetsExtraction.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Asset discovery should consume the parsed storage AST from `parseConfluenceStorageXml` instead of reparsing XML.
+  - Same-origin asset downloads may be outside the normalized Confluence context path; later download logic should use `requiresConfluenceCredentials` rather than rejecting outside-path assets.
+  - Cross-origin image assets are discovered but marked as not requiring Confluence credentials so later upload/render fallback stories can avoid credentialed downloads.
 
 ---

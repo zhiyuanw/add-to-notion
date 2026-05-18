@@ -295,8 +295,8 @@
         "Typecheck passes"
       ],
       "priority": 17,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented Confluence asset extraction and classification for storage XML images, attachment metadata, same-origin outside-path assets, cross-origin images, and Draw.io rendered image/source links."
     },
     {
       "id": "US-018",
