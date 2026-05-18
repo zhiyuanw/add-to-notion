@@ -49,8 +49,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented typed chrome.storage.local helpers, Notion auth persistence helpers, logout cleanup, and mocked storage tests."
     },
     {
       "id": "US-004",

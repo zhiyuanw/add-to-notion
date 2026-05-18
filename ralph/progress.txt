@@ -5,6 +5,7 @@
 - Use npm scripts as the project quality gate: `npm run build`, `npm run typecheck`, and `npm test`.
 - MV3 static assets live in `public/`; extension entrypoints live in `src/background`, `src/popup`, and `src/options`.
 - Shared domain contracts live in `src/shared/domain`; storage key contracts live in `src/shared/storage`.
+- Route all typed `chrome.storage.local` access through `src/shared/storage/local.ts`; logout cleanup preserves Confluence base URL.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -19,6 +20,7 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
   - Static extension pages and manifest are copied from `public/` into `dist/` by `scripts/build-extension.mjs`.
   - `tsconfig.build.json` emits only MV3 entrypoint JavaScript, then the build script flattens names to match manifest references.
   - `npm audit --omit=dev` is clean; current audit warnings are limited to development dependencies.
+
 ---
 
 ## 2026-05-18 17:50 - US-002
@@ -31,4 +33,17 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Shared domain exports are centralized through `src/shared/domain/index.ts`.
   - Persisted storage key names are centralized in `src/shared/storage/keys.ts` to keep later storage helpers and logout cleanup aligned.
+
+---
+
+## 2026-05-18 17:57 - US-003
+
+- Implemented typed `chrome.storage.local` read/write/remove helpers with storage-key-specific value types.
+- Added Notion auth persistence helpers and logout cleanup that removes Notion auth state, workspace info, default target, and last terminal ClipTask summary while preserving the Confluence base URL.
+- Added mocked `chrome.storage.local` unit tests for typed helpers, token persistence, and logout cleanup boundaries; verified build, typecheck, and tests pass.
+- Files changed: `src/shared/storage/local.ts`, `src/shared/storage/index.ts`, `src/tests/storageHelpers.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Use `src/shared/storage/local.ts` for typed storage access instead of calling `chrome.storage.local` directly from feature code.
+  - Logout cleanup intentionally removes the last terminal ClipTask summary but keeps the active ClipTask lock and Confluence base URL.
+
 ---

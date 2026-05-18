@@ -104,6 +104,7 @@ Important architectural constraints:
 - Converter should generate Notion blocks directly. Markdown is not the main intermediate format because it loses Notion callout, toggle, table, image, caption, and nested block semantics.
 - Asset uploads have concurrency limit 3; files over 20 MB are skipped and preserved as links.
 - Uploaded Notion file references must be attached within 1 hour; do not persist uploaded file URLs as durable references.
+- Route typed `chrome.storage.local` access through `src/shared/storage/local.ts`; logout cleanup removes Notion state and last terminal summary while preserving the Confluence base URL.
 - Background task runner must allow only one non-terminal `ClipTask`; duplicate save clicks show existing progress.
 - If Notion page creation succeeds but later block append fails, do not archive/delete/clear the partial page.
 
