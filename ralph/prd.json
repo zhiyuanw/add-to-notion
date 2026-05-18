@@ -185,8 +185,8 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented Confluence page detection for viewpage, modern space page, and display URLs with DOM/bootstrap pageId fallback, normalized base URL path guard, host permission check, and tests."
     },
     {
       "id": "US-012",

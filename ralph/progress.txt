@@ -13,6 +13,7 @@
 - Notion OAuth helpers live in `src/notion/oauth.ts`; inject `fetcher`, `now`, and `createState` in tests instead of relying on real network or time.
 - Notion auth/session helpers live in `src/notion/auth.ts`; use `notionApiFetch` before Notion API calls so expired tokens refresh and failed refresh clears session state.
 - Notion target discovery helpers live in `src/notion/targets.ts`; target selection persists through `storageKeys.notionDefaultTarget`.
+- Confluence page detection lives in `src/confluence/detector.ts`; it must check host permission and enforce the normalized base URL context path before matching page URL forms.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -149,5 +150,19 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
   - Use `mountOptionsPage` for full Options page behavior; section-specific helpers remain useful for narrower DOM tests.
   - Notion Options UI tests should inject OAuth config, `createState`, and `now` to avoid placeholder client config and nondeterministic time.
   - Notion logout in the UI relies on `logoutNotion`, so it clears Notion state and last terminal summary while leaving the Confluence base URL visible.
+
+---
+
+## 2026-05-18 18:55 - US-011
+
+- Implemented Confluence page detection for `/pages/viewpage.action?pageId=...`, `/spaces/{SPACE}/pages/{pageId}`, and `/display/{SPACE}/{Page+Title}` URLs.
+- Detection now requires configured-origin host permission and rejects pages outside the normalized Confluence base URL context path, including same-origin outside-path URLs.
+- Added unit tests for all supported URL forms, DOM metadata pageId, bootstrap pageId fallback, path guard failures, missing host permission, and unsupported URLs.
+- Verified `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Files changed: `src/confluence/detector.ts`, `src/confluence/index.ts`, `src/tests/confluenceDetector.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Confluence detection should return a typed failure reason rather than throwing for unsupported pages or missing permissions.
+  - Use `hasConfluenceHostPermission` before matching Confluence page URL forms so detector and future fetchers share the same origin-permission boundary.
+  - Keep context-path enforcement separate from host permission because Chrome permissions are origin-scoped only.
 
 ---
