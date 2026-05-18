@@ -17,6 +17,7 @@
 - Confluence storage fetching lives in `src/confluence/fetcher.ts`; it uses `credentials: 'include'`, enforces the base URL path, and maps recoverable HTTP failures to typed reasons.
 - Route external HTTP calls through `src/shared/request.ts` to apply 30s timeout, retry policy, 429 retry hints, and caller-provided deadlines.
 - Parse Confluence storage XML through `src/confluence/storageParser.ts`; it preserves namespace-qualified nodes, blocks external entities, degrades unsafe raw HTML, and returns typed parse failures.
+- Convert supported Confluence storage AST content through `src/converter/index.ts`; it emits Notion block objects directly instead of using Markdown.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -208,5 +209,17 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Use `parseConfluenceStorageXml` before converter work so later conversion stories can consume a namespace-preserving AST instead of reparsing XML.
   - Unsupported raw HTML is degraded locally during parsing; converters should consume resulting text/degradation data rather than preserving raw executable/renderable HTML.
+
+---
+
+## 2026-05-18 19:25 - US-015
+
+- Implemented direct conversion from parsed Confluence storage AST to Notion block objects for headings, paragraphs, links, ordered lists, unordered lists, nested lists, inline formatting, best-effort colored text, and basic tables.
+- Added complex table degradation that flattens merged-cell tables to plain text without failing conversion.
+- Added simple fixture coverage for headings, paragraphs, links, lists, basic table, and inline formatting; verified `npm run build`, `npm run typecheck`, and `npm test` pass.
+- Files changed: `src/converter/index.ts`, `src/tests/converterBasic.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Converter output types currently live in `src/converter/index.ts` and model the Notion block fields used by implemented stories.
+  - Future macro and asset conversion should extend the same AST-to-Notion-block path rather than introducing Markdown as an intermediate format.
 
 ---
