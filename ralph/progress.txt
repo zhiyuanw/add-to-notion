@@ -7,6 +7,7 @@
 - Shared domain contracts live in `src/shared/domain`; storage key contracts live in `src/shared/storage`.
 - Route all typed `chrome.storage.local` access through `src/shared/storage/local.ts`; logout cleanup preserves Confluence base URL.
 - Normalize and validate Confluence base URLs through `src/confluence/baseUrl.ts`; store them via `saveConfluenceBaseUrl`.
+- Request and check Confluence host permissions through `src/confluence/permissions.ts`; permissions are origin-scoped, not context-path-scoped.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -58,5 +59,18 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Normalize and validate Confluence base URLs through `src/confluence/baseUrl.ts`; use `saveConfluenceBaseUrl` for persistence so invalid values are not stored.
   - Normalized Confluence base URLs preserve origin and context path, remove trailing slashes, and reject query strings, fragments, credentials, and unsupported schemes.
+
+---
+
+## 2026-05-18 18:15 - US-005
+
+- Implemented Confluence host permission helpers that request and check `chrome.permissions` for the configured Confluence origin only.
+- Added permission construction that normalizes the supplied base URL and drops any context path before creating the origin pattern.
+- Added mocked `chrome.permissions` unit tests for origin-only permissions, context-path URLs, changed base URLs, permission checks, and invalid URL rejection.
+- Verified `npm run build`, `npm run typecheck`, and `npm test` pass.
+- Files changed: `src/confluence/permissions.ts`, `src/confluence/index.ts`, `src/tests/confluencePermissions.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Confluence host permission helpers live in `src/confluence/permissions.ts` and should be used by options UI, detection, and REST fetch code.
+  - Host permissions are origin-scoped (`https://host/*`), while later detection/fetch path guards still need to enforce the normalized base URL context path separately.
 
 ---

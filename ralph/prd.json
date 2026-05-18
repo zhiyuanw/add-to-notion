@@ -83,8 +83,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented origin-scoped Confluence host permission request and permission check helpers with mocked chrome.permissions tests."
     },
     {
       "id": "US-006",
