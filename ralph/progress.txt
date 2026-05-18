@@ -22,6 +22,7 @@
 - Asset discovery lives in `src/assets/index.ts`; it consumes parsed storage AST plus `ConfluencePageData.attachments` and classifies same-origin assets independently from context-path guards.
 - Asset processing lives in `src/assets/index.ts`; use `processConfluenceAssets` with injected fetch/upload hooks in tests and keep source-link degradations as warnings.
 - Asset rendering also lives in `src/assets/index.ts`; use `renderProcessedAssetsToNotionBlocks` to turn processed assets into Notion file/image blocks or link fallbacks without per-image callouts.
+- Notion page creation lives in `src/notion/writer.ts`; `createNotionPage` always POSTs to `/v1/pages` and never searches, dedupes, or updates old clipped pages.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -279,5 +280,19 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Asset rendering is separate from asset upload processing; call `renderProcessedAssetsToNotionBlocks` after `processConfluenceAssets` when later pipeline stories need Notion blocks for assets.
   - Failed same-origin Confluence assets should stay as source-link paragraphs rather than Notion external images, because internal URLs may not be usable from Notion.
+
+---
+
+## 2026-05-18 19:57 - US-020
+
+- Implemented Notion page creation for selected database and page targets through `createNotionPage`.
+- Database targets now create a new page using the saved title property name, while page targets create a child page with the Confluence title as-is.
+- Added duplicate-save coverage that verifies repeated saves POST new pages without search, dedupe, or update calls.
+- Added target-invalid guidance for stale database title property, schema, and target permission failures.
+- Verified `npm run build`, `npm run typecheck`, and `npm test` pass.
+- Files changed: `src/notion/writer.ts`, `src/notion/index.ts`, `src/tests/notionWriter.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Use `src/notion/writer.ts` for Notion page creation so target handling and target-invalid guidance stay centralized.
+  - Future append/metadata stories should build on the created page result instead of adding duplicate detection or historical mapping lookups.
 
 ---
