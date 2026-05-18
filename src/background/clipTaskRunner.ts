@@ -1,6 +1,7 @@
 import type { ClipTask, ClipTaskResult, ClipTaskStatus, Degradation, NotionTarget } from '../shared/domain';
 import { isTerminalClipTaskStatus, type TerminalClipTaskSummary } from '../shared/domain';
 import { readLocalStorageValue, removeLocalStorageValues, storageKeys, writeLocalStorageValue } from '../shared/storage';
+import { showClipTaskCompletionFeedback } from './notifications';
 
 const defaultClipTaskTimeoutMs = 5 * 60 * 1000;
 const timeoutFailureMessage = 'Clip task timed out. Please try again.';
@@ -80,6 +81,7 @@ function buildTerminalSummary(task: ClipTask, completedAt: string): TerminalClip
 async function persistTerminalTask(task: ClipTask, completedAt: string): Promise<void> {
   await writeLocalStorageValue(storageKeys.lastTerminalClipTaskSummary, buildTerminalSummary(task, completedAt));
   await removeLocalStorageValues([storageKeys.activeClipTaskLock]);
+  await showClipTaskCompletionFeedback(task);
 }
 
 async function failTask(task: ClipTask, code: string, message: string, now: string): Promise<ClipTask> {

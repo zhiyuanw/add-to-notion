@@ -3,12 +3,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClipTask } from '../shared/domain';
 import { isTerminalClipTaskStatus } from '../shared/domain';
 import { storageKeys } from '../shared/storage';
+import { showClipTaskCompletionFeedback } from '../background/notifications';
 import {
   recoverInterruptedClipTaskOnStartup,
   startBackgroundClipTask,
   updateBackgroundClipTaskStatus,
   type ClipTaskOperationContext
 } from '../background/clipTaskRunner';
+
+vi.mock('../background/notifications', () => ({
+  showClipTaskCompletionFeedback: vi.fn(async () => undefined)
+}));
 
 const storage = new Map<string, unknown>();
 const startedAt = '2026-05-18T20:10:00.000Z';
@@ -64,6 +69,7 @@ function makeTask(overrides: Partial<ClipTask> = {}): ClipTask {
 beforeEach(() => {
   storage.clear();
   stubStorage();
+  vi.mocked(showClipTaskCompletionFeedback).mockClear();
   vi.useRealTimers();
 });
 
@@ -105,6 +111,9 @@ describe('background ClipTask runner', () => {
       });
     });
     expect(operation).toHaveBeenCalledTimes(1);
+    expect(showClipTaskCompletionFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId: 'task-1', status: 'succeeded' })
+    );
   });
 
   it('returns the existing non-terminal ClipTask for duplicate save clicks', async () => {
@@ -135,6 +144,13 @@ describe('background ClipTask runner', () => {
         warningCount: 0
       });
     });
+    expect(showClipTaskCompletionFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'task-timeout',
+        status: 'failed',
+        failure: { code: 'clip-task-timeout', message: 'Clip task timed out. Please try again.' }
+      })
+    );
   });
 
   it('recovers an interrupted persisted non-terminal task on service worker startup', async () => {
@@ -170,6 +186,13 @@ describe('background ClipTask runner', () => {
       warningCount: 0,
       completedAt: '2026-05-18T20:11:00.000Z'
     });
+    expect(showClipTaskCompletionFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'task-interrupted',
+        status: 'failed',
+        failure: { code: 'service-worker-restarted', message: 'Previous save was interrupted. Please try again.' }
+      })
+    );
   });
 
   it('keeps terminal tasks untouched during service worker startup recovery', async () => {
@@ -177,6 +200,27 @@ describe('background ClipTask runner', () => {
 
     await expect(recoverInterruptedClipTaskOnStartup({ now: () => startedAt })).resolves.toBeUndefined();
     expect(storage.get(storageKeys.activeClipTaskLock)).toMatchObject({ taskId: 'task-done', status: 'succeeded' });
+  });
+
+  it('shows failure feedback when the operation fails', async () => {
+    const operation = vi.fn(async () => ({
+      status: 'failed' as const,
+      failure: { code: 'notion-write-failed', message: 'Notion write failed.' },
+      warnings: []
+    }));
+
+    await startBackgroundClipTask({ now: () => startedAt, createTaskId: () => 'task-failed', operation });
+
+    await vi.waitFor(() => {
+      expect(storage.get(storageKeys.activeClipTaskLock)).toBeUndefined();
+      expect(showClipTaskCompletionFeedback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskId: 'task-failed',
+          status: 'failed',
+          failure: { code: 'notion-write-failed', message: 'Notion write failed.' }
+        })
+      );
+    });
   });
 
   it('updates persisted state transitions while a task is running', async () => {

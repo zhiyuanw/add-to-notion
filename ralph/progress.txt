@@ -27,6 +27,7 @@
 - Background task state lives in `src/background/clipTaskRunner.ts`; use `startBackgroundClipTask` for one active non-terminal task and startup recovery.
 - Full save orchestration lives in `src/background/savePipeline.ts`; create operations with `createSaveConfluencePageOperation` so detection, fetch, parse, convert, asset processing, and Notion writes share one terminal summary.
 - Popup UI logic can be tested with `happy-dom` and exported `mountPopupPage` from `src/popup/index.ts`; background save starts via `clip.saveCurrentPage` runtime messages.
+- ClipTask completion feedback lives in `src/background/notifications.ts`; `persistTerminalTask` triggers success/failure notifications and badge updates.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -353,7 +354,18 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - Files changed: `src/popup/index.ts`, `src/background/index.ts`, `src/tests/popupSave.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
 - **Learnings for future iterations:**
   - Popup UI can expose `mountPopupPage` from `src/popup/index.ts` so DOM behavior is testable under `happy-dom`.
-  - Popup save actions should call the background through the `clip.saveCurrentPage` runtime message instead of running the full pipeline in the popup.
-  - Browser verification criteria still need manual or dev-browser follow-up when browser tools are unavailable.
+---
+
+## 2026-05-18 20:54 - US-025
+
+- Implemented ClipTask completion feedback for save success and failure with browser notifications plus extension action badge state.
+- Added retry guidance to timeout and service-worker startup recovery failure notifications.
+- Added notification redaction for authorization headers, cookie headers, access tokens, and refresh tokens.
+- Added tests for success/failure payloads, retry guidance, redaction, and ClipTask runner integration for success, failure, timeout, and startup recovery.
+- Verified `npm run build`, `npm run typecheck`, and `npm test` pass.
+- Files changed: `src/background/notifications.ts`, `src/background/clipTaskRunner.ts`, `src/background/index.ts`, `src/tests/backgroundNotifications.test.ts`, `src/tests/backgroundClipTaskRunner.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - ClipTask terminal feedback should be emitted from `persistTerminalTask` so all terminal paths, including timeout and startup recovery, share one notification path.
+  - Keep notification text built from task summaries and pass it through `redactSensitiveText` before sending to Chrome APIs.
 
 ---

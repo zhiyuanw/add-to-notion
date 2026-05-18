@@ -2,6 +2,7 @@ import { recoverInterruptedClipTaskOnStartup, startBackgroundClipTask } from './
 import { createSaveConfluencePageOperation } from './savePipeline';
 
 export * from './clipTaskRunner';
+export * from './notifications';
 export * from './savePipeline';
 
 const appName = 'Add to Notion';
