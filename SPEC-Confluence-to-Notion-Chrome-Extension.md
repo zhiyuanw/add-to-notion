@@ -163,6 +163,7 @@ flowchart TD
 - V1 MUST request only the minimum OAuth scopes required by the Notion API version used by implementation for target discovery/search, page creation, database child page creation, block append, and file upload.
 - V1 MUST NOT request scopes whose only purpose is database schema/property management, workspace administration, user management, or other capabilities outside this SPEC.
 - Required OAuth scopes MUST be verified against Notion's current OAuth documentation during implementation and recorded in extension configuration or release notes.
+- The SPEC does not fix a specific `Notion-Version`; implementation MUST choose a Notion API version according to current Notion documentation at implementation time and record it in extension configuration or release notes.
 - 本地开发和分发 MAY 使用同一个 Notion OAuth app。
 - OAuth access token 和 refresh token MUST 存在 `chrome.storage.local`。
 - Token MUST NOT 存在 `chrome.storage.sync`。
@@ -198,6 +199,7 @@ flowchart TD
 - Options UI MUST NOT 展示扩展无权访问的 Notion page 或 database。
 - 目标列表为空时，Options UI MUST 提示用户在 Notion 中把目标 page 或 database 授权给该 OAuth integration。
 - 选择 target 时，扩展 MUST 验证 target type 为 `database` 或 `page`，并保存 `id`、`type` 和 `displayName`。
+- 选择 database target 时，扩展 MUST 读取 database metadata，并保存 title property name / id。
 - Target type MUST 为 `database` 或 `page`；V1 MUST 同时支持两种类型。
 - Popup SHOULD 显示当前 target，并允许用户切换。
 - Database target MUST NOT 自动创建或修改 metadata properties；metadata MUST 写入页面正文顶部。
@@ -373,6 +375,9 @@ Converter MUST 直接生成 Notion blocks。Markdown MUST NOT 作为主中间格
 
 - Notion Writer MUST 在选中 database 中创建新的 clipped page。
 - Notion Writer MUST NOT 自动创建、修改或依赖 metadata properties。
+- Notion Writer MUST use the saved database title property name / id to set the clipped page title.
+- Notion Writer MUST NOT proactively re-read database metadata before each save solely to detect title property drift.
+- If Notion page creation fails because the saved database title property, schema, or target permission is no longer valid, the task MUST fail early with a target-invalid message instructing the user to reselect the target.
 - Notion Writer MUST 在 clipped page 顶部添加 `Confluence metadata` toggle。
 - Toggle 内 MUST 包含 Original URL、Confluence Base URL、Confluence Page ID、Confluence Space、Labels、Last Modified、Last Clipped At。
 - Database page 的 title property MUST 使用 Confluence page title，不追加 pageId、时间戳或其他去重后缀。
@@ -411,6 +416,13 @@ Converter MUST 直接生成 Notion blocks。Markdown MUST NOT 作为主中间格
 ## 11. 后台任务和进度
 
 - 保存操作 MUST 在 background service worker 中运行。
+- ClipTask MUST have a 5-minute overall timeout measured from task start.
+- On overall timeout, the task MUST transition to `failed`, release the single-task lock, and show a retryable timeout message to the user.
+- All Confluence page fetch, asset download, and Notion API requests MUST use a 30-second per-request timeout.
+- Retryable external request failures MUST be retried at most 2 times per request, bounded by the 5-minute overall task timeout.
+- Retryable failures are network errors, HTTP 408, HTTP 429, and HTTP 5xx.
+- HTTP 400, 401, 403, and 404 MUST NOT be retried, except where a specific API uses a documented retryable 4xx other than 408 or 429.
+- Notion 429 retry SHOULD follow Notion response retry hints when available.
 - 任意非终态 `ClipTask` 存在时，扩展 MUST NOT 启动第二个保存任务。
 - 用户重复点击保存或在其他页面点击保存时，Popup MUST 显示既有任务进度，而不是创建新的 Notion page。
 - V1 MUST NOT 实现并发保存或任务队列。
@@ -418,6 +430,8 @@ Converter MUST 直接生成 Notion blocks。Markdown MUST NOT 作为主中间格
 - Popup 打开时 MUST 显示当前阶段：fetch、parse、convert、upload images、write。
 - 完成或失败 MUST 通过 browser notification 或 extension badge 告知用户。
 - V1 不要求 service worker 终止后的任务恢复。
+- ClipTask state MUST be persisted enough for the service worker to detect a previously non-terminal task after restart.
+- On service worker startup, if a persisted non-terminal `ClipTask` exists, the extension MUST mark it as `failed`, release the single-task lock, and tell the user to retry.
 - 如果 Chrome 终止 service worker 导致任务中断，扩展 MUST 把任务标为 failed，并提示用户重试。
 - 用户重试 MUST 按一次新的保存任务处理；如果先前任务已部分创建 Notion page，V1 MUST NOT 尝试复用或清理该 page。
 - V1 MUST 在本地保存最近一次 terminal `ClipTask` 结果摘要，直到下一次任务完成后覆盖或用户 logout 清理。
@@ -431,6 +445,7 @@ Converter MUST 直接生成 Notion blocks。Markdown MUST NOT 作为主中间格
 | Notion token refresh failed | refresh token 失效 | 清理 token，fail early | 重新授权 Notion。 |
 | Notion target list empty | OAuth workspace has no accessible page/database | Fail target setup with guidance to grant access in Notion | 用户在 Notion 授权目标页面或数据库。 |
 | Missing target | 未选择 database/page | Fail early | 选择保存目标。 |
+| Invalid/stale Notion database target | Saved database title property, schema, or target permission is no longer valid | Fail page creation with target-invalid message; do not proactively re-read metadata on every save | 重新选择保存目标。 |
 | Invalid Confluence base URL | URL has query/hash/credentials or unsupported scheme | Fail setup with validation message | 输入有效的 Confluence base URL。 |
 | Missing host permission | 未授予 Confluence origin 权限 | Fail early | 授予 host permission。 |
 | Unsupported page | URL 不匹配或无法解析 pageId | Fail early | 打开支持的 Confluence 页面。 |
@@ -447,9 +462,9 @@ Converter MUST 直接生成 Notion blocks。Markdown MUST NOT 作为主中间格
 | Notion property creation denied | V1 不创建或修改 database properties | Not applicable | 无需操作。 |
 | Oversized file | 文件超过 20 MB | Skip upload; preserve original Confluence link as text or bookmark/link block; add warning | 如需离线可读，手动处理文件。 |
 | Expired Notion upload | 文件上传后 1 小时内未 attach | Treat as upload failure; preserve original Confluence link; add warning | 用户重试。 |
-| Notion page creation failed | API 拒绝创建页面 | Fail whole task | 检查 target 权限。 |
+| Notion page creation failed | API 拒绝创建页面 | Fail whole task; if caused by stale database title property, schema, or target permission, report target-invalid | 检查 target 权限或重新选择 target。 |
 | Notion write partially failed | block append 中途失败 | Fail task with partial-write warning; do not archive/delete/clear partial page; include Notion page URL if available | 用户可重试；重复保存会创建新页面。 |
-| Service worker terminated | Chrome 回收后台任务 | Mark failed if detectable; retry creates a new save task and does not reuse or clean partial Notion pages | 用户重试。 |
+| Service worker terminated | Chrome 回收后台任务 | Mark failed if detectable; on startup, persisted non-terminal tasks are marked failed and the single-task lock is released; retry creates a new save task and does not reuse or clean partial Notion pages | 用户重试。 |
 
 ## 13. 安全和隐私
 
@@ -548,9 +563,14 @@ Required fixtures：
 | Core | Oversized file | Files over 20 MB are not uploaded; source URL is preserved; warning count increments. |
 | Core | Expired upload attachment window | Upload not attached within 1 hour is treated as failed upload; source URL is preserved. |
 | Core | Database target metadata | Metadata is written into the page body toggle; database properties are not created or modified. |
+| Core | Database title property discovery | Selecting a database target reads database metadata and stores the title property name / id; saving uses the stored title property. |
+| Core | Stale database target | If saved database title property, schema, or permission becomes invalid, page creation fails with target-invalid guidance. |
 | Core | Re-save same page | Creates a new Notion page each time; previous clipped pages remain unchanged. |
 | Core | Notion append batching | Writes blocks in batches of max 100. |
+| Core | Request timeout and retry | Confluence page fetch, asset download, and Notion API requests use 30s per-request timeout; network errors, 408, 429, and 5xx retry at most 2 times within the 5-minute task timeout. |
+| Core | ClipTask overall timeout | A task running longer than 5 minutes fails, releases the single-task lock, and shows retry guidance. |
 | Core | Duplicate save click while any task is running | Does not start a second task; popup shows existing task progress. |
+| Core | Service worker startup with non-terminal task | Persisted non-terminal task is marked failed, the single-task lock is released, and retry guidance is shown. |
 | Core | Service worker termination simulation | Task fails and asks user to retry. |
 | Security | Host permission path guard | Host permission is origin-scoped; detector and REST content fetcher reject URLs outside normalized base URL path; same-origin referenced assets may be fetched. |
 | Security | Debug export absence | No debug export is available in V1; development logs redact secrets. |
@@ -582,6 +602,8 @@ Run against at least one real Confluence Server / Data Center 7.13.7 instance:
 - [ ] Notion OAuth app requests only minimum scopes needed for target discovery/search, page/database child creation, block append, and file upload.
 - [ ] Notion OAuth app does not request schema/admin/user-management scopes outside this SPEC.
 - [ ] User can search and select an accessible Notion page or database target.
+- [ ] Selecting a database target reads and stores its title property name / id.
+- [ ] Stale database title property, schema, or permission failures show target-invalid guidance.
 - [ ] Empty Notion target list shows guidance to grant integration access in Notion.
 - [ ] Tokens stored only in `chrome.storage.local`.
 - [ ] Unsupported raw HTML is converted to plain text or degradation and is never emitted as executable/renderable HTML.
@@ -610,8 +632,11 @@ Run against at least one real Confluence Server / Data Center 7.13.7 instance:
 - [ ] Page target writes metadata toggle.
 - [ ] Re-saving same Confluence page creates a new Notion page and leaves previous clipped pages unchanged.
 - [ ] Writer appends blocks in batches of max 100.
+- [ ] External requests use 30-second per-request timeouts and retry network errors, 408, 429, and 5xx at most 2 times within the task timeout.
+- [ ] ClipTask fails visibly and releases the single-task lock after 5 minutes.
 - [ ] Duplicate save click while any task is running does not start a second task.
 - [ ] Popup close does not cancel active task.
+- [ ] Service worker startup marks persisted non-terminal tasks failed, releases the single-task lock, and shows retry guidance.
 - [ ] Service worker interruption fails visibly and tells user to retry.
 - [ ] Only the most recent terminal task summary is stored and logout clears it.
 - [ ] Final result shows success/failure and warning count.
