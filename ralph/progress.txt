@@ -8,6 +8,7 @@
 - Route all typed `chrome.storage.local` access through `src/shared/storage/local.ts`; logout cleanup preserves Confluence base URL.
 - Normalize and validate Confluence base URLs through `src/confluence/baseUrl.ts`; store them via `saveConfluenceBaseUrl`.
 - Request and check Confluence host permissions through `src/confluence/permissions.ts`; permissions are origin-scoped, not context-path-scoped.
+- Options UI logic can be tested with `happy-dom` and exported mount/render helpers from `src/options/index.ts`.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -47,6 +48,7 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Use `src/shared/storage/local.ts` for typed storage access instead of calling `chrome.storage.local` directly from feature code.
   - Logout cleanup intentionally removes the last terminal ClipTask summary but keeps the active ClipTask lock and Confluence base URL.
+
 ---
 
 ## 2026-05-18 18:11 - US-004
@@ -72,5 +74,20 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Confluence host permission helpers live in `src/confluence/permissions.ts` and should be used by options UI, detection, and REST fetch code.
   - Host permissions are origin-scoped (`https://host/*`), while later detection/fetch path guards still need to enforce the normalized base URL context path separately.
+
+---
+
+## 2026-05-18 18:23 - US-006
+
+- Implemented the Options page Confluence settings UI with base URL input, validation error display, saved normalized URL display, host permission status, and explicit grant-permission action.
+- Saving invalid Confluence URLs now shows a validation message and does not persist or request permission.
+- Saving valid Confluence URLs persists the normalized URL and triggers the origin-scoped host permission request flow.
+- Added `happy-dom` tests for initial saved state, invalid save, valid save, denied permission status, and explicit grant action.
+- Verified `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Browser verification was not performed because no browser testing MCP/dev-browser tool is available in this session; manual extension options-page verification is still recommended.
+- Files changed: `package.json`, `package-lock.json`, `src/options/index.ts`, `src/tests/optionsConfluence.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Options UI can expose mount/render helpers from `src/options/index.ts` so DOM behavior is testable under `happy-dom` without a browser.
+  - Current automated checks cover Options UI DOM behavior, but PRD browser verification criteria still require manual or dev-browser follow-up when browser tools are unavailable.
 
 ---
