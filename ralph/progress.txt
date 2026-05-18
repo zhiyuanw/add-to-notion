@@ -23,6 +23,7 @@
 - Asset processing lives in `src/assets/index.ts`; use `processConfluenceAssets` with injected fetch/upload hooks in tests and keep source-link degradations as warnings.
 - Asset rendering also lives in `src/assets/index.ts`; use `renderProcessedAssetsToNotionBlocks` to turn processed assets into Notion file/image blocks or link fallbacks without per-image callouts.
 - Notion page creation lives in `src/notion/writer.ts`; `createNotionPage` always POSTs to `/v1/pages` and never searches, dedupes, or updates old clipped pages.
+- Full clipped-page writes use `writeClippedNotionPage` in `src/notion/writer.ts`; it creates the page first, then appends metadata/content blocks in batches of at most 100.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -294,5 +295,19 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Use `src/notion/writer.ts` for Notion page creation so target handling and target-invalid guidance stay centralized.
   - Future append/metadata stories should build on the created page result instead of adding duplicate detection or historical mapping lookups.
+
+---
+
+## 2026-05-18 20:05 - US-021
+
+- Implemented clipped-page writing that creates the Notion page first, prepends a Confluence metadata toggle, and appends metadata plus content blocks afterward.
+- Added metadata toggle fields for Original URL, Confluence Base URL, Confluence Page ID, Confluence Space, Labels, Last Modified, and Last Clipped At.
+- Added append batching at Notion's 100-block limit and partial append failure errors that preserve the created page ID/URL without deleting or reusing the partial page.
+- Added unit tests for metadata toggle fields, 100-block batching, database property non-modification, and partial write behavior.
+- Verified `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Files changed: `src/notion/writer.ts`, `src/tests/notionWriter.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Use `writeClippedNotionPage` for complete Notion write behavior after conversion; it appends metadata/content via `/v1/blocks/{pageId}/children` rather than putting children on the create-page request.
+  - Append failure tests must account for the shared retry wrapper retrying HTTP 5xx responses before surfacing the final failure.
 
 ---

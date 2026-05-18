@@ -1,5 +1,5 @@
-import type { NotionBlock } from '../converter';
-import type { NotionDatabaseTarget, NotionPageTarget, NotionTarget } from '../shared/domain';
+import type { NotionBlock, NotionParagraphBlock, NotionToggleBlock } from '../converter';
+import type { ConfluencePageData, NotionDatabaseTarget, NotionPageTarget, NotionTarget } from '../shared/domain';
 import { notionApiFetch, type NotionAuthOptions } from './auth';
 
 export interface CreateNotionPageRequest {
@@ -8,9 +8,19 @@ export interface CreateNotionPageRequest {
   blocks: NotionBlock[];
 }
 
+export interface WriteClippedNotionPageRequest {
+  target: NotionTarget;
+  pageData: ConfluencePageData;
+  contentBlocks: NotionBlock[];
+}
+
 export interface CreateNotionPageResult {
   pageId: string;
   pageUrl?: string;
+}
+
+export interface WriteClippedNotionPageResult extends CreateNotionPageResult {
+  appendedBlockCount: number;
 }
 
 interface NotionPageCreateResponse {
@@ -20,11 +30,15 @@ interface NotionPageCreateResponse {
 
 export class NotionWriterError extends Error {
   guidance?: string;
+  pageId?: string;
+  pageUrl?: string;
 
-  constructor(message: string, guidance?: string) {
+  constructor(message: string, guidance?: string, partialPage?: CreateNotionPageResult) {
     super(message);
     this.name = 'NotionWriterError';
     this.guidance = guidance;
+    this.pageId = partialPage?.pageId;
+    this.pageUrl = partialPage?.pageUrl;
   }
 }
 
@@ -56,6 +70,41 @@ export async function createNotionPage(
   return {
     pageId: requireString(payload.id, 'missing-created-page-id'),
     ...(typeof payload.url === 'string' && payload.url.length > 0 ? { pageUrl: payload.url } : {})
+  };
+}
+
+export async function writeClippedNotionPage(
+  request: WriteClippedNotionPageRequest,
+  options: NotionAuthOptions = {}
+): Promise<WriteClippedNotionPageResult> {
+  const createdPage = await createNotionPage(
+    {
+      target: request.target,
+      title: request.pageData.title,
+      blocks: []
+    },
+    options
+  );
+  const blocks = [createMetadataToggleBlock(request.pageData, options.now?.() ?? new Date()), ...request.contentBlocks];
+
+  for (const batch of chunkBlocks(blocks, 100)) {
+    const response = await notionApiFetch(
+      `https://api.notion.com/v1/blocks/${createdPage.pageId}/children`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ children: batch })
+      },
+      options
+    );
+
+    if (!response.ok) {
+      throw new NotionWriterError(`notion-block-append-failed:${response.status}`, undefined, createdPage);
+    }
+  }
+
+  return {
+    ...createdPage,
+    appendedBlockCount: blocks.length
   };
 }
 
@@ -95,6 +144,59 @@ function createTitleRichText(title: string): Record<string, unknown> {
     type: 'text',
     text: { content: title }
   };
+}
+
+function createMetadataToggleBlock(pageData: ConfluencePageData, clippedAt: Date): NotionToggleBlock {
+  return {
+    object: 'block',
+    type: 'toggle',
+    toggle: {
+      rich_text: [createRichText('Confluence metadata')],
+      children: metadataLines(pageData, clippedAt).map(createParagraphBlock)
+    }
+  };
+}
+
+function metadataLines(pageData: ConfluencePageData, clippedAt: Date): string[] {
+  return [
+    `Original URL: ${pageData.pageRef.pageUrl}`,
+    `Confluence Base URL: ${pageData.pageRef.baseUrl}`,
+    `Confluence Page ID: ${pageData.pageRef.pageId}`,
+    `Confluence Space: ${formatSpace(pageData)}`,
+    `Labels: ${pageData.metadata.labels.length > 0 ? pageData.metadata.labels.join(', ') : 'None'}`,
+    `Last Modified: ${pageData.metadata.lastModified ?? 'Unknown'}`,
+    `Last Clipped At: ${clippedAt.toISOString()}`
+  ];
+}
+
+function formatSpace(pageData: ConfluencePageData): string {
+  if (pageData.metadata.spaceName && pageData.metadata.spaceKey) {
+    return `${pageData.metadata.spaceName} (${pageData.metadata.spaceKey})`;
+  }
+
+  return pageData.metadata.spaceName ?? pageData.metadata.spaceKey ?? 'Unknown';
+}
+
+function createParagraphBlock(content: string): NotionParagraphBlock {
+  return {
+    object: 'block',
+    type: 'paragraph',
+    paragraph: {
+      rich_text: [createRichText(content)]
+    }
+  };
+}
+
+function createRichText(content: string): { type: 'text'; text: { content: string }; annotations: Record<string, never> } {
+  return {
+    type: 'text',
+    text: { content },
+    annotations: {}
+  };
+}
+
+function chunkBlocks(blocks: NotionBlock[], size: number): NotionBlock[][] {
+  return Array.from({ length: Math.ceil(blocks.length / size) }, (_, index) => blocks.slice(index * size, index * size + size));
 }
 
 function isTargetInvalidStatus(status: number): boolean {
