@@ -18,6 +18,7 @@
 - Route external HTTP calls through `src/shared/request.ts` to apply 30s timeout, retry policy, 429 retry hints, and caller-provided deadlines.
 - Parse Confluence storage XML through `src/confluence/storageParser.ts`; it preserves namespace-qualified nodes, blocks external entities, degrades unsafe raw HTML, and returns typed parse failures.
 - Convert supported Confluence storage AST content through `src/converter/index.ts`; it emits Notion block objects directly instead of using Markdown.
+- Macro conversion belongs in `src/converter/index.ts` by detecting `ac:structured-macro`; macro-heavy fixtures should cover supported and unknown macros.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -221,5 +222,17 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Converter output types currently live in `src/converter/index.ts` and model the Notion block fields used by implemented stories.
   - Future macro and asset conversion should extend the same AST-to-Notion-block path rather than introducing Markdown as an intermediate format.
+
+---
+
+## 2026-05-18 19:35 - US-016
+
+- Implemented direct Confluence macro conversion for Mermaid, code, noformat, info, note, tip, warning, expand, and unknown structured macros.
+- Added macro-heavy fixture tests covering required macro mappings, unknown macro fallback without macro parameters, and Mermaid language fallback warnings.
+- Verified `npm run build`, `npm run typecheck`, and `npm test` pass.
+- Files changed: `src/converter/index.ts`, `src/tests/converterMacros.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Macro conversion extends the existing AST-to-Notion-block converter path in `src/converter/index.ts`; keep avoiding Markdown as an intermediate format.
+  - Tests for converter features should parse sanitized storage XML with `parseConfluenceStorageXml` before calling `convertConfluenceStorageToNotionBlocks`.
 
 ---

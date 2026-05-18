@@ -277,8 +277,8 @@
         "Typecheck passes"
       ],
       "priority": 16,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented macro-heavy conversion for Mermaid, code/noformat, callout macros, expand toggles, unknown macro fallback, and Mermaid language fallback warning."
     },
     {
       "id": "US-017",

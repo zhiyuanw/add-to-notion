@@ -28,7 +28,10 @@ export type NotionBlock =
   | NotionBulletedListItemBlock
   | NotionNumberedListItemBlock
   | NotionTableBlock
-  | NotionTableRowBlock;
+  | NotionTableRowBlock
+  | NotionCodeBlock
+  | NotionCalloutBlock
+  | NotionToggleBlock;
 
 export interface NotionParagraphBlock {
   object: 'block';
@@ -83,6 +86,57 @@ export interface NotionTableRowBlock {
   };
 }
 
+export interface NotionCodeBlock {
+  object: 'block';
+  type: 'code';
+  code: {
+    rich_text: NotionRichText[];
+    language: string;
+  };
+}
+
+export interface NotionCalloutBlock {
+  object: 'block';
+  type: 'callout';
+  callout: {
+    rich_text: NotionRichText[];
+    children?: NotionBlock[];
+  };
+}
+
+export interface NotionToggleBlock {
+  object: 'block';
+  type: 'toggle';
+  toggle: {
+    rich_text: NotionRichText[];
+    children?: NotionBlock[];
+  };
+}
+
+export interface ConfluenceToNotionConversionOptions {
+  acceptedCodeLanguages?: ReadonlySet<string>;
+}
+
+export const defaultAcceptedCodeLanguages = new Set([
+  'plain text',
+  'mermaid',
+  'typescript',
+  'javascript',
+  'java',
+  'python',
+  'go',
+  'rust',
+  'sql',
+  'bash',
+  'shell',
+  'json',
+  'xml',
+  'html',
+  'css',
+  'markdown',
+  'yaml'
+]);
+
 export interface ConfluenceToNotionConversionResult {
   blocks: NotionBlock[];
   degradations: Degradation[];
@@ -94,16 +148,22 @@ interface InlineContext {
 }
 
 export function convertConfluenceStorageToNotionBlocks(
-  document: ConfluenceStorageDocument
+  document: ConfluenceStorageDocument,
+  options: ConfluenceToNotionConversionOptions = {}
 ): ConfluenceToNotionConversionResult {
   const degradations: Degradation[] = [];
+  const acceptedCodeLanguages = options.acceptedCodeLanguages ?? defaultAcceptedCodeLanguages;
   return {
-    blocks: convertBlockNodes(document.children, degradations),
+    blocks: convertBlockNodes(document.children, degradations, acceptedCodeLanguages),
     degradations
   };
 }
 
-function convertBlockNodes(nodes: ConfluenceStorageNode[], degradations: Degradation[]): NotionBlock[] {
+function convertBlockNodes(
+  nodes: ConfluenceStorageNode[],
+  degradations: Degradation[],
+  acceptedCodeLanguages: ReadonlySet<string>
+): NotionBlock[] {
   const blocks: NotionBlock[] = [];
   let textBuffer: ConfluenceStorageNode[] = [];
 
@@ -123,6 +183,11 @@ function convertBlockNodes(nodes: ConfluenceStorageNode[], degradations: Degrada
     blocks.push(...flushParagraph(textBuffer));
     textBuffer = [];
 
+    if (isMacro(node)) {
+      blocks.push(convertMacro(node, degradations, acceptedCodeLanguages));
+      continue;
+    }
+
     if (isHeading(node)) {
       blocks.push(createHeadingBlock(node));
       continue;
@@ -134,7 +199,7 @@ function convertBlockNodes(nodes: ConfluenceStorageNode[], degradations: Degrada
     }
 
     if (node.localName === 'ul' || node.localName === 'ol') {
-      blocks.push(...convertList(node, degradations));
+      blocks.push(...convertList(node, degradations, acceptedCodeLanguages));
       continue;
     }
 
@@ -143,7 +208,7 @@ function convertBlockNodes(nodes: ConfluenceStorageNode[], degradations: Degrada
       continue;
     }
 
-    blocks.push(...convertBlockNodes(node.children, degradations));
+    blocks.push(...convertBlockNodes(node.children, degradations, acceptedCodeLanguages));
   }
 
   blocks.push(...flushParagraph(textBuffer));
@@ -181,23 +246,30 @@ function createHeadingBlock(node: ConfluenceStorageElement): NotionHeadingBlock 
   };
 }
 
-function convertList(node: ConfluenceStorageElement, degradations: Degradation[]): NotionBlock[] {
+function convertList(
+  node: ConfluenceStorageElement,
+  degradations: Degradation[],
+  acceptedCodeLanguages: ReadonlySet<string>
+): NotionBlock[] {
   return elementChildren(node)
     .filter((child) => child.localName === 'li')
-    .map((item) => convertListItem(item, node.localName === 'ol' ? 'numbered_list_item' : 'bulleted_list_item', degradations));
+    .map((item) =>
+      convertListItem(item, node.localName === 'ol' ? 'numbered_list_item' : 'bulleted_list_item', degradations, acceptedCodeLanguages)
+    );
 }
 
 function convertListItem(
   item: ConfluenceStorageElement,
   type: 'bulleted_list_item' | 'numbered_list_item',
-  degradations: Degradation[]
+  degradations: Degradation[],
+  acceptedCodeLanguages: ReadonlySet<string>
 ): NotionBulletedListItemBlock | NotionNumberedListItemBlock {
   const inlineChildren: ConfluenceStorageNode[] = [];
   const nestedBlocks: NotionBlock[] = [];
 
   for (const child of item.children) {
     if (child.type === 'element' && (child.localName === 'ul' || child.localName === 'ol')) {
-      nestedBlocks.push(...convertList(child, degradations));
+      nestedBlocks.push(...convertList(child, degradations, acceptedCodeLanguages));
       continue;
     }
     inlineChildren.push(child);
@@ -221,6 +293,119 @@ function convertListItem(
     type,
     numbered_list_item: listPayload
   };
+}
+
+function convertMacro(
+  node: ConfluenceStorageElement,
+  degradations: Degradation[],
+  acceptedCodeLanguages: ReadonlySet<string>
+): NotionBlock {
+  const macroName = macroNameFor(node);
+
+  if (macroName === 'mermaid') {
+    return createCodeBlock(plainTextBody(node), codeLanguageOrFallback('mermaid', macroName, degradations, acceptedCodeLanguages));
+  }
+
+  if (macroName === 'code' || macroName === 'noformat') {
+    const requestedLanguage = macroName === 'code' ? macroParameter(node, 'language') : undefined;
+    const language = requestedLanguage ? normalizeCodeLanguage(requestedLanguage) : 'plain text';
+    return createCodeBlock(plainTextBody(node), codeLanguageOrFallback(language, macroName, degradations, acceptedCodeLanguages));
+  }
+
+  if (new Set(['info', 'note', 'tip', 'warning']).has(macroName)) {
+    return createCalloutBlock(richTextBodyRichText(node));
+  }
+
+  if (macroName === 'expand') {
+    const children = convertBlockNodes(richTextBodyChildren(node), degradations, acceptedCodeLanguages);
+    return {
+      object: 'block',
+      type: 'toggle',
+      toggle: {
+        rich_text: [createTextRichText(macroParameter(node, 'title') ?? 'Details', { annotations: {} })],
+        ...(children.length > 0 ? { children } : {})
+      }
+    };
+  }
+
+  const children = convertBlockNodes(richTextBodyChildren(node), degradations, acceptedCodeLanguages);
+  return createCalloutBlock([createTextRichText(`Unsupported Confluence macro: ${macroName}`, { annotations: {} })], children);
+}
+
+function createCodeBlock(content: string, language: string): NotionCodeBlock {
+  return {
+    object: 'block',
+    type: 'code',
+    code: {
+      rich_text: [createTextRichText(content.trim(), { annotations: {} })],
+      language
+    }
+  };
+}
+
+function createCalloutBlock(richText: NotionRichText[], children: NotionBlock[] = []): NotionCalloutBlock {
+  return {
+    object: 'block',
+    type: 'callout',
+    callout: {
+      rich_text: richText,
+      ...(children.length > 0 ? { children } : {})
+    }
+  };
+}
+
+function codeLanguageOrFallback(
+  language: string,
+  macroName: string,
+  degradations: Degradation[],
+  acceptedCodeLanguages: ReadonlySet<string>
+): string {
+  if (acceptedCodeLanguages.has(language)) {
+    return language;
+  }
+
+  degradations.push({
+    type: 'macro-language-fallback',
+    source: macroName,
+    message: `Converted ${macroName === 'mermaid' ? 'Mermaid' : macroName} macro to plain-text code because Notion language ${language} is not accepted.`,
+    severity: 'warning'
+  });
+  return 'plain text';
+}
+
+function macroNameFor(node: ConfluenceStorageElement): string {
+  return attributeValue(node, 'name')?.trim() ?? 'unknown';
+}
+
+function macroParameter(node: ConfluenceStorageElement, name: string): string | undefined {
+  return elementChildren(node)
+    .find((child) => child.localName === 'parameter' && attributeValue(child, 'name') === name)
+    ?.children.map((child) => (child.type === 'text' ? child.text : collectPlainText(child.children)))
+    .join('')
+    .trim();
+}
+
+function plainTextBody(node: ConfluenceStorageElement): string {
+  const body = elementChildren(node).find((child) => child.localName === 'plain-text-body');
+  return body ? collectPlainText(body.children) : collectPlainText(richTextBodyChildren(node));
+}
+
+function richTextBodyChildren(node: ConfluenceStorageElement): ConfluenceStorageNode[] {
+  return elementChildren(node).find((child) => child.localName === 'rich-text-body')?.children ?? [];
+}
+
+function richTextBodyRichText(node: ConfluenceStorageElement): NotionRichText[] {
+  const children = richTextBodyChildren(node);
+  const paragraph = children.length === 1 && children[0]?.type === 'element' && children[0].localName === 'p' ? children[0].children : children;
+  return normalizeRichText(convertInlineNodes(paragraph, { annotations: {} }));
+}
+
+function normalizeCodeLanguage(language: string): string {
+  const normalized = language.trim().toLowerCase();
+  if (normalized === 'ts') return 'typescript';
+  if (normalized === 'js') return 'javascript';
+  if (normalized === 'sh') return 'shell';
+  return normalized || 'plain text';
 }
 
 function convertTable(node: ConfluenceStorageElement, degradations: Degradation[]): NotionBlock {
@@ -345,6 +530,10 @@ function cleanAnnotations(annotations: NotionTextAnnotations): NotionTextAnnotat
   if (annotations.code) clean.code = true;
   if (annotations.color) clean.color = annotations.color;
   return clean;
+}
+
+function isMacro(node: ConfluenceStorageElement): boolean {
+  return node.namespacePrefix === 'ac' && node.localName === 'structured-macro';
 }
 
 function isHeading(node: ConfluenceStorageElement): boolean {
