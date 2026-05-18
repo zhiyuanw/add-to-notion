@@ -1,6 +1,8 @@
 import type { ConfluenceStorageDocument, ConfluenceStorageElement, ConfluenceStorageNode } from '../confluence/storageParser';
 import { normalizeConfluenceBaseUrl } from '../confluence/baseUrl';
-import type { AssetKind, AssetRef, ConfluenceAttachment, ConfluencePageData } from '../shared/domain';
+import { notionApiFetch, type NotionAuthOptions } from '../notion/auth';
+import { fetchWithTimeoutAndRetry, type RetriableFetchAttempt } from '../shared/request';
+import type { AssetKind, AssetRef, ConfluenceAttachment, ConfluencePageData, Degradation, NotionFileRef } from '../shared/domain';
 
 export const assetsModuleName = 'assets';
 
@@ -16,6 +18,48 @@ export interface ExtractedConfluenceAsset extends AssetRef {
 export interface ConfluenceAssetExtractionResult {
   assets: ExtractedConfluenceAsset[];
 }
+
+export interface ProcessedConfluenceAsset extends ExtractedConfluenceAsset {
+  notionFileRef?: NotionFileRef;
+  degradation?: Degradation;
+}
+
+export interface ConfluenceAssetProcessingResult {
+  assets: ProcessedConfluenceAsset[];
+  degradations: Degradation[];
+}
+
+export interface NotionFileUploadCreateRequest {
+  filename: string;
+  mimeType: string;
+  contentLength: number;
+}
+
+export interface NotionFileUploadCreateResponse {
+  id: string;
+  uploadUrl: string;
+}
+
+export interface NotionFileUploadCompleteResponse {
+  fileUploadId: string;
+  expiresAt?: string;
+}
+
+export interface ConfluenceAssetProcessingOptions extends NotionAuthOptions {
+  fetcher?: RetriableFetchAttempt;
+  createFileUpload?: (metadata: NotionFileUploadCreateRequest, options: ConfluenceAssetProcessingOptions) => Promise<NotionFileUploadCreateResponse>;
+  uploadFileContents?: (
+    uploadUrl: string,
+    file: Blob,
+    metadata: NotionFileUploadCreateRequest,
+    options: ConfluenceAssetProcessingOptions
+  ) => Promise<void>;
+  completeFileUpload?: (fileUploadId: string, options: ConfluenceAssetProcessingOptions) => Promise<NotionFileUploadCompleteResponse>;
+}
+
+const maxUploadSizeBytes = 20 * 1024 * 1024;
+const maxAttachWindowMs = 60 * 60 * 1000;
+const assetUploadConcurrency = 3;
 
 interface AssetCandidate {
   sourceUrl: string;
@@ -39,6 +83,205 @@ export function extractConfluenceAssets(
   const assets = candidates.flatMap((candidate) => toExtractedAsset(candidate, baseUrl.normalizedUrl, baseUrl.origin, baseUrl.contextPath));
 
   return { assets: dedupeAssets(assets) };
+}
+
+export async function processConfluenceAssets(
+  assets: ExtractedConfluenceAsset[],
+  options: ConfluenceAssetProcessingOptions = {}
+): Promise<ConfluenceAssetProcessingResult> {
+  const processed = new Array<ProcessedConfluenceAsset>(assets.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < assets.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      processed[index] = await processSingleAsset(assets[index], options);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(assetUploadConcurrency, assets.length) }, () => worker()));
+
+  return {
+    assets: processed,
+    degradations: processed.flatMap((asset) => (asset.degradation ? [asset.degradation] : []))
+  };
+}
+
+async function processSingleAsset(
+  asset: ExtractedConfluenceAsset,
+  options: ConfluenceAssetProcessingOptions
+): Promise<ProcessedConfluenceAsset> {
+  if (asset.size !== undefined && asset.size > maxUploadSizeBytes) {
+    return degradeAsset(asset, 'skipped', 'asset-too-large', `Asset is larger than 20 MB: ${asset.sourceUrl}`);
+  }
+
+  if (!asset.requiresConfluenceCredentials) {
+    return degradeAsset(asset, 'skipped', 'asset-cross-origin', `Cross-origin asset is preserved as a source link: ${asset.sourceUrl}`);
+  }
+
+  let file: Blob;
+
+  try {
+    file = await downloadConfluenceAsset(asset, options);
+  } catch {
+    return degradeAsset(asset, 'failed', 'asset-download-failed', `Could not download Confluence asset: ${asset.sourceUrl}`);
+  }
+
+  const metadata: NotionFileUploadCreateRequest = {
+    filename: asset.filename ?? filenameFromUrl(asset.sourceUrl) ?? 'asset',
+    mimeType: asset.mimeType ?? (file.type || 'application/octet-stream'),
+    contentLength: file.size
+  };
+
+  try {
+    const createFileUpload = options.createFileUpload ?? createNotionFileUpload;
+    const uploadFileContents = options.uploadFileContents ?? uploadNotionFileContents;
+    const completeFileUpload = options.completeFileUpload ?? completeNotionFileUpload;
+    const upload = await createFileUpload(metadata, options);
+
+    await uploadFileContents(upload.uploadUrl, file, metadata, options);
+
+    const completed = await completeFileUpload(upload.id, options);
+
+    if (!canAttachWithinOneHour(completed.expiresAt, options.now?.() ?? new Date())) {
+      return degradeAsset(asset, 'failed', 'asset-attach-window-expired', `Notion file upload cannot be attached within 1 hour: ${asset.sourceUrl}`);
+    }
+
+    return {
+      ...asset,
+      status: 'uploaded',
+      notionFileRef: {
+        fileUploadId: completed.fileUploadId,
+        filename: metadata.filename,
+        ...(completed.expiresAt ? { expiresAt: completed.expiresAt } : {})
+      }
+    };
+  } catch {
+    return degradeAsset(asset, 'failed', 'asset-upload-failed', `Could not upload asset to Notion: ${asset.sourceUrl}`);
+  }
+}
+
+async function downloadConfluenceAsset(asset: ExtractedConfluenceAsset, options: ConfluenceAssetProcessingOptions): Promise<Blob> {
+  const response = await fetchWithTimeoutAndRetry(asset.sourceUrl, {
+    fetcher: options.fetcher,
+    credentials: 'include',
+    deadlineMs: options.deadlineMs
+  });
+
+  if (!response.ok) {
+    throw new Error(`asset-download-failed:${response.status}`);
+  }
+
+  return response.blob();
+}
+
+async function createNotionFileUpload(
+  metadata: NotionFileUploadCreateRequest,
+  options: ConfluenceAssetProcessingOptions
+): Promise<NotionFileUploadCreateResponse> {
+  const response = await notionApiFetch(
+    'https://api.notion.com/v1/file_uploads',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        filename: metadata.filename,
+        content_type: metadata.mimeType,
+        content_length: metadata.contentLength
+      })
+    },
+    options
+  );
+
+  if (!response.ok) {
+    throw new Error(`notion-file-upload-create-failed:${response.status}`);
+  }
+
+  const payload = (await response.json()) as Record<string, unknown>;
+  return {
+    id: requireString(payload.id, 'missing-file-upload-id'),
+    uploadUrl: requireString(payload.upload_url ?? payload.uploadUrl, 'missing-file-upload-url')
+  };
+}
+
+async function uploadNotionFileContents(
+  uploadUrl: string,
+  file: Blob,
+  metadata: NotionFileUploadCreateRequest,
+  options: ConfluenceAssetProcessingOptions
+): Promise<void> {
+  const formData = new FormData();
+  formData.append('file', file, metadata.filename);
+
+  const response = await fetchWithTimeoutAndRetry(uploadUrl, {
+    fetcher: options.fetcher,
+    method: 'POST',
+    body: formData,
+    deadlineMs: options.deadlineMs
+  });
+
+  if (!response.ok) {
+    throw new Error(`notion-file-upload-content-failed:${response.status}`);
+  }
+}
+
+async function completeNotionFileUpload(fileUploadId: string, options: ConfluenceAssetProcessingOptions): Promise<NotionFileUploadCompleteResponse> {
+  const response = await notionApiFetch(`https://api.notion.com/v1/file_uploads/${encodeURIComponent(fileUploadId)}/complete`, { method: 'POST' }, options);
+
+  if (!response.ok) {
+    throw new Error(`notion-file-upload-complete-failed:${response.status}`);
+  }
+
+  const payload = (await response.json()) as Record<string, unknown>;
+  return {
+    fileUploadId: requireString(payload.id ?? payload.file_upload_id ?? payload.fileUploadId, 'missing-file-upload-id'),
+    expiresAt: optionalString(payload.expires_at ?? payload.expiresAt)
+  };
+}
+
+function canAttachWithinOneHour(expiresAt: string | undefined, now: Date): boolean {
+  if (!expiresAt) {
+    return true;
+  }
+
+  const expiresAtMs = Date.parse(expiresAt);
+  return Number.isFinite(expiresAtMs) && expiresAtMs <= now.getTime() + maxAttachWindowMs;
+}
+
+function degradeAsset(
+  asset: ExtractedConfluenceAsset,
+  status: 'skipped' | 'failed',
+  type: string,
+  message: string
+): ProcessedConfluenceAsset {
+  const degradation: Degradation = {
+    type,
+    source: asset.sourceUrl,
+    message,
+    severity: 'warning'
+  };
+
+  return {
+    ...asset,
+    status,
+    notionFileRef: {
+      externalUrl: asset.sourceUrl,
+      filename: asset.filename
+    },
+    degradation
+  };
+}
+
+function requireString(value: unknown, error: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(error);
+  }
+
+  return value;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function storageImageCandidates(document: ConfluenceStorageDocument): AssetCandidate[] {

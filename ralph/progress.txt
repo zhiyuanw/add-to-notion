@@ -20,6 +20,7 @@
 - Convert supported Confluence storage AST content through `src/converter/index.ts`; it emits Notion block objects directly instead of using Markdown.
 - Macro conversion belongs in `src/converter/index.ts` by detecting `ac:structured-macro`; macro-heavy fixtures should cover supported and unknown macros.
 - Asset discovery lives in `src/assets/index.ts`; it consumes parsed storage AST plus `ConfluencePageData.attachments` and classifies same-origin assets independently from context-path guards.
+- Asset processing lives in `src/assets/index.ts`; use `processConfluenceAssets` with injected fetch/upload hooks in tests and keep source-link degradations as warnings.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -249,5 +250,19 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
   - Asset discovery should consume the parsed storage AST from `parseConfluenceStorageXml` instead of reparsing XML.
   - Same-origin asset downloads may be outside the normalized Confluence context path; later download logic should use `requiresConfluenceCredentials` rather than rejecting outside-path assets.
   - Cross-origin image assets are discovered but marked as not requiring Confluence credentials so later upload/render fallback stories can avoid credentialed downloads.
+
+---
+
+## 2026-05-18 19:45 - US-018
+
+- Implemented Confluence asset processing for same-origin credentialed downloads, Notion file upload creation/content upload/completion, concurrency limit 3, oversized skips, cross-origin skips, download/upload failures, and expired attach-window failures.
+- Added warning degradations that preserve source links and avoid persisting Notion-hosted uploaded file URLs as durable references.
+- Added unit tests for credential mode, concurrency 3, oversized skip, cross-origin no-credential behavior, download failure, upload failure, and attach-window expiration.
+- Verified `npm run build`, `npm run typecheck`, and `npm test` pass.
+- Files changed: `src/assets/index.ts`, `src/tests/assetsProcessing.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Asset processing extends `src/assets/index.ts`; tests should inject fetch/upload hooks to avoid real Notion or network calls.
+  - Asset fallbacks should keep the original source URL as `notionFileRef.externalUrl` with a warning degradation for later rendering stories.
+  - Run project quality commands from the repository root; starting in `ralph/` makes Vitest miss `src/**/*.test.ts`.
 
 ---
