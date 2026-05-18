@@ -66,8 +66,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented Confluence base URL validation, normalization, single active storage helper, and tests."
     },
     {
       "id": "US-005",

@@ -4,9 +4,11 @@ import type { ClipTask } from '../shared/domain/clipTask';
 import type { NotionTarget } from '../shared/domain/models';
 import {
   clearNotionSessionState,
+  readConfluenceBaseUrl,
   readLocalStorageValue,
   readNotionAuthState,
   removeLocalStorageValues,
+  saveConfluenceBaseUrl,
   saveNotionAuthState,
   storageKeys,
   writeLocalStorageValue,
@@ -94,6 +96,30 @@ describe('chrome.storage.local helpers', () => {
 
     await expect(readNotionAuthState()).resolves.toEqual(authState);
     expect(chrome.storage.local.set).toHaveBeenCalledWith({ [storageKeys.notionAuthState]: authState });
+  });
+
+  it('stores one normalized Confluence base URL', async () => {
+    await expect(saveConfluenceBaseUrl('https://confluence.example.com/wiki/')).resolves.toBe(
+      'https://confluence.example.com/wiki'
+    );
+    await expect(readConfluenceBaseUrl()).resolves.toBe('https://confluence.example.com/wiki');
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
+      [storageKeys.confluenceBaseUrl]: 'https://confluence.example.com/wiki'
+    });
+  });
+
+  it('replaces the active Confluence base URL when saving a new one', async () => {
+    await saveConfluenceBaseUrl('https://confluence.example.com/wiki');
+    await saveConfluenceBaseUrl('https://docs.example.com/confluence');
+
+    await expect(readConfluenceBaseUrl()).resolves.toBe('https://docs.example.com/confluence');
+  });
+
+  it('does not store invalid Confluence base URLs', async () => {
+    await expect(saveConfluenceBaseUrl('https://confluence.example.com/wiki?space=ENG')).rejects.toThrow(
+      'query-not-allowed'
+    );
+    await expect(readConfluenceBaseUrl()).resolves.toBeUndefined();
   });
 
   it('clears Notion session state on logout while preserving Confluence configuration', async () => {

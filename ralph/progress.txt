@@ -6,6 +6,7 @@
 - MV3 static assets live in `public/`; extension entrypoints live in `src/background`, `src/popup`, and `src/options`.
 - Shared domain contracts live in `src/shared/domain`; storage key contracts live in `src/shared/storage`.
 - Route all typed `chrome.storage.local` access through `src/shared/storage/local.ts`; logout cleanup preserves Confluence base URL.
+- Normalize and validate Confluence base URLs through `src/confluence/baseUrl.ts`; store them via `saveConfluenceBaseUrl`.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -45,5 +46,17 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Use `src/shared/storage/local.ts` for typed storage access instead of calling `chrome.storage.local` directly from feature code.
   - Logout cleanup intentionally removes the last terminal ClipTask summary but keeps the active ClipTask lock and Confluence base URL.
+---
+
+## 2026-05-18 18:11 - US-004
+
+- Implemented Confluence base URL validation and normalization for absolute `http`/`https` URLs with optional context path.
+- Added single active normalized Confluence base URL storage helpers that reject invalid input before persistence.
+- Added unit tests for origin-only URLs, context paths, trailing slash removal, query strings, fragments, credentials, unsupported schemes, and storage replacement behavior.
+- Verified `npm run build`, `npm run typecheck`, and `npm test` pass.
+- Files changed: `src/confluence/baseUrl.ts`, `src/confluence/index.ts`, `src/shared/storage/local.ts`, `src/tests/confluenceBaseUrl.test.ts`, `src/tests/storageHelpers.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Normalize and validate Confluence base URLs through `src/confluence/baseUrl.ts`; use `saveConfluenceBaseUrl` for persistence so invalid values are not stored.
+  - Normalized Confluence base URLs preserve origin and context path, remove trailing slashes, and reject query strings, fragments, credentials, and unsupported schemes.
 
 ---

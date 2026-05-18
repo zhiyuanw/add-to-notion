@@ -1,5 +1,6 @@
 import type { ClipTask, TerminalClipTaskSummary } from '../domain/clipTask';
 import type { NotionTarget } from '../domain/models';
+import { normalizeConfluenceBaseUrl } from '../../confluence/baseUrl';
 import { storageKeys, type NotionAuthState, type NotionWorkspaceInfo } from './keys';
 
 export type LocalStorageValueByKey = {
@@ -44,6 +45,21 @@ export async function saveNotionAuthState(authState: NotionAuthState): Promise<v
 
 export async function readNotionAuthState(): Promise<NotionAuthState | undefined> {
   return readLocalStorageValue(storageKeys.notionAuthState);
+}
+
+export async function saveConfluenceBaseUrl(input: string): Promise<string> {
+  const result = normalizeConfluenceBaseUrl(input);
+
+  if (!result.ok) {
+    throw new Error(result.error);
+  }
+
+  await writeLocalStorageValue(storageKeys.confluenceBaseUrl, result.normalizedUrl);
+  return result.normalizedUrl;
+}
+
+export async function readConfluenceBaseUrl(): Promise<string | undefined> {
+  return readLocalStorageValue(storageKeys.confluenceBaseUrl);
 }
 
 export async function clearNotionSessionState(): Promise<void> {
