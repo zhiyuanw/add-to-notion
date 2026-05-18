@@ -28,6 +28,7 @@
 - Full save orchestration lives in `src/background/savePipeline.ts`; create operations with `createSaveConfluencePageOperation` so detection, fetch, parse, convert, asset processing, and Notion writes share one terminal summary.
 - Popup UI logic can be tested with `happy-dom` and exported `mountPopupPage` from `src/popup/index.ts`; background save starts via `clip.saveCurrentPage` runtime messages.
 - ClipTask completion feedback lives in `src/background/notifications.ts`; `persistTerminalTask` triggers success/failure notifications and badge updates.
+- Developer debug logging lives in `src/shared/debugLogger.ts`; it is quiet by default, must be explicitly enabled, and redacts tokens/cookies/authorization values before writing structured entries.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -368,4 +369,16 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
   - ClipTask terminal feedback should be emitted from `persistTerminalTask` so all terminal paths, including timeout and startup recovery, share one notification path.
   - Keep notification text built from task summaries and pass it through `redactSensitiveText` before sending to Chrome APIs.
 
+---
+
+## 2026-05-18 21:03 - US-026
+
+- Implemented structured developer debug logging with recursive redaction for access tokens, refresh tokens, cookie values, and authorization headers.
+- Added quiet-by-default logger behavior with explicit enablement, plus pipeline logs for stage start/end, Confluence fetch status, XML parse summary, macro counts, asset upload summary, and Notion write batch summary.
+- Added unit tests for redaction, default quiet mode, enabled structured entries, and required summary helpers.
+- Verified `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Files changed: `src/shared/debugLogger.ts`, `src/tests/debugLogger.test.ts`, `src/background/savePipeline.ts`, `src/confluence/fetcher.ts`, `src/assets/index.ts`, `src/notion/auth.ts`, `src/notion/writer.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Developer logs should use `createDebugLogger` and pass `debugLogger` through operation options instead of calling `console` directly.
+  - Debug logging is intentionally disabled unless explicitly enabled, so production and tests stay quiet by default.
 ---

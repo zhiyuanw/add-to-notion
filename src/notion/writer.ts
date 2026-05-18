@@ -87,7 +87,8 @@ export async function writeClippedNotionPage(
   );
   const blocks = [createMetadataToggleBlock(request.pageData, options.now?.() ?? new Date()), ...request.contentBlocks];
 
-  for (const batch of chunkBlocks(blocks, 100)) {
+  const batches = chunkBlocks(blocks, 100);
+  for (const [index, batch] of batches.entries()) {
     const response = await notionApiFetch(
       `https://api.notion.com/v1/blocks/${createdPage.pageId}/children`,
       {
@@ -96,6 +97,7 @@ export async function writeClippedNotionPage(
       },
       options
     );
+    options.debugLogger?.notionWriteBatchSummary({ batchIndex: index + 1, batchCount: batches.length, blockCount: batch.length, status: response.status });
 
     if (!response.ok) {
       throw new NotionWriterError(`notion-block-append-failed:${response.status}`, undefined, createdPage);

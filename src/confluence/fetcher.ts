@@ -1,4 +1,5 @@
 import type { ConfluenceAttachment, ConfluencePageData, ConfluencePageRef } from '../shared/domain';
+import type { DebugLogger } from '../shared/debugLogger';
 import { fetchWithTimeoutAndRetry, type RetriableFetchAttempt } from '../shared/request';
 
 import { normalizeConfluenceBaseUrl } from './baseUrl';
@@ -18,6 +19,7 @@ export type ConfluenceStorageFetchResult =
 export type ConfluenceStorageFetcherOptions = {
   fetcher?: RetriableFetchAttempt;
   deadlineMs?: number;
+  debugLogger?: DebugLogger;
 };
 
 type ConfluenceRestPage = {
@@ -87,6 +89,7 @@ export async function fetchConfluencePageStorage(
       credentials: 'include',
       deadlineMs: options.deadlineMs
     });
+    options.debugLogger?.confluenceFetchStatus({ status: response.status, url: restUrl.href });
   } catch {
     return { ok: false, reason: 'temporary-confluence-failure' };
   }

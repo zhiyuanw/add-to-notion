@@ -8,6 +8,7 @@ import {
   type NotionWorkspaceInfo
 } from '../shared/storage';
 import { fetchWithTimeoutAndRetry, type RetriableFetchAttempt } from '../shared/request';
+import type { DebugLogger } from '../shared/debugLogger';
 import { notionOAuthConfig, type NotionOAuthConfig } from './oauth';
 
 export interface NotionAuthOptions {
@@ -15,6 +16,7 @@ export interface NotionAuthOptions {
   fetcher?: RetriableFetchAttempt;
   now?: () => Date;
   deadlineMs?: number;
+  debugLogger?: DebugLogger;
 }
 
 export interface NotionAuthorizationStatus {

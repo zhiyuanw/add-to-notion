@@ -158,6 +158,13 @@ export async function processConfluenceAssets(
 
   await Promise.all(Array.from({ length: Math.min(assetUploadConcurrency, assets.length) }, () => worker()));
 
+  options.debugLogger?.assetUploadSummary({
+    total: processed.length,
+    uploaded: processed.filter((asset) => asset.status === 'uploaded').length,
+    failed: processed.filter((asset) => asset.status === 'failed').length,
+    skipped: processed.filter((asset) => asset.status === 'skipped').length
+  });
+
   return {
     assets: processed,
     degradations: processed.flatMap((asset) => (asset.degradation ? [asset.degradation] : []))

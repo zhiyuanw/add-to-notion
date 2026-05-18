@@ -1,9 +1,10 @@
 import { extractConfluenceAssets, processConfluenceAssets, renderProcessedAssetsToNotionBlocks } from '../assets';
-import { detectConfluencePage, fetchConfluencePageStorage, parseConfluenceStorageXml } from '../confluence';
+import { detectConfluencePage, fetchConfluencePageStorage, parseConfluenceStorageXml, type ConfluenceStorageDocument, type ConfluenceStorageElement, type ConfluenceStorageNode } from '../confluence';
 import { convertConfluenceStorageToNotionBlocks, type NotionBlock } from '../converter';
 import { notionOAuthConfig, type NotionAuthOptions, type NotionOAuthConfig, NotionWriterError, writeClippedNotionPage } from '../notion';
 import type { ClipTaskOperationContext, ClipTaskOperationResult } from './clipTaskRunner';
 import type { ClipTaskResult, ConfluencePageData, Degradation, NotionTarget } from '../shared/domain';
+import { createDebugLogger, type DebugLogger } from '../shared/debugLogger';
 import { readConfluenceBaseUrl, readLocalStorageValue, storageKeys } from '../shared/storage';
 import type { RetriableFetchAttempt } from '../shared/request';
 
@@ -14,6 +15,7 @@ export interface SaveConfluencePageOperationOptions {
   fetcher?: RetriableFetchAttempt;
   notionConfig?: NotionOAuthConfig;
   now?: () => Date;
+  debugLogger?: DebugLogger;
 }
 
 interface PipelineState {
@@ -36,6 +38,8 @@ export function createSaveConfluencePageOperation(
       assetCount: 0
     };
 
+    const logger = options.debugLogger ?? createDebugLogger();
+
     try {
       const baseUrl = await readConfluenceBaseUrl();
       if (!baseUrl) {
@@ -52,6 +56,7 @@ export function createSaveConfluencePageOperation(
       }
 
       await context.updateStatus('detecting', 'Detecting Confluence page');
+      logger.stageStart('detecting');
       const detection = await detectConfluencePage({
         baseUrl,
         pageUrl: options.pageUrl,
@@ -59,43 +64,59 @@ export function createSaveConfluencePageOperation(
         bootstrapPageId: options.bootstrapPageId
       });
       if (!detection.ok) {
-        return fail(options, detectionFailureCode(detection.reason), detectionFailureMessage(detection.reason), context, state);
+        logger.stageEnd('detecting', { status: 'failed', reason: detection.reason });
+        return fail(options, 'confluence-detection-' + detection.reason, detectionFailureMessage(detection.reason), context, state);
       }
+      logger.stageEnd('detecting');
 
       await context.updateStatus('fetching', 'Fetching Confluence storage');
+      logger.stageStart('fetching');
       const fetched = await fetchConfluencePageStorage(detection.pageRef, {
         fetcher: options.fetcher,
-        deadlineMs: context.deadlineMs
+        deadlineMs: context.deadlineMs,
+        debugLogger: logger
       });
       if (!fetched.ok) {
+        logger.stageEnd('fetching', { status: 'failed', reason: fetched.reason });
         return fail(options, fetchFailureCode(fetched.reason), fetchFailureMessage(fetched.reason), context, state);
       }
       state.pageData = fetched.pageData;
+      logger.stageEnd('fetching', { title: fetched.pageData.title });
 
       await context.updateStatus('parsing', 'Parsing Confluence storage XML');
+      logger.stageStart('parsing');
       const parsed = parseConfluenceStorageXml(fetched.pageData.bodyStorageXml);
       if (!parsed.ok) {
+        logger.stageEnd('parsing', { status: 'failed' });
         return fail(options, 'confluence-storage-parse-failed', parsed.message, context, state);
       }
       state.warnings.push(...parsed.degradations);
+      logger.xmlParseSummary({ rootChildCount: parsed.document.children.length, degradationCount: parsed.degradations.length });
+      logger.stageEnd('parsing');
 
       await context.updateStatus('converting', 'Converting content to Notion blocks');
+      logger.stageStart('converting');
       const converted = convertConfluenceStorageToNotionBlocks(parsed.document);
       state.warnings.push(...converted.degradations);
+      logger.macroCountByType(countMacrosByType(parsed.document));
+      logger.stageEnd('converting', { blockCount: converted.blocks.length, degradationCount: converted.degradations.length });
 
       const extractedAssets = extractConfluenceAssets(fetched.pageData, parsed.document).assets;
       state.assetCount = extractedAssets.length;
 
       await context.updateStatus('uploading_assets', 'Uploading assets to Notion');
-      const authOptions = notionAuthOptions(options, context.deadlineMs);
+      logger.stageStart('uploading_assets');
+      const authOptions = notionAuthOptions(options, context.deadlineMs, logger);
       const processedAssets = await processConfluenceAssets(extractedAssets, authOptions);
       const renderedAssets = renderProcessedAssetsToNotionBlocks(processedAssets.assets);
       state.warnings.push(...processedAssets.degradations);
+      logger.stageEnd('uploading_assets');
 
       const contentBlocks = [...converted.blocks, ...renderedAssets.blocks] as NotionBlock[];
       state.blockCount = contentBlocks.length;
 
       await context.updateStatus('writing', 'Writing Notion page');
+      logger.stageStart('writing');
       const writeResult = await writeClippedNotionPage(
         {
           target: state.target,
@@ -107,6 +128,7 @@ export function createSaveConfluencePageOperation(
       state.notionPageId = writeResult.pageId;
       state.notionPageUrl = writeResult.pageUrl;
       state.blockCount = writeResult.appendedBlockCount;
+      logger.stageEnd('writing', { notionPageId: writeResult.pageId, appendedBlockCount: writeResult.appendedBlockCount });
 
       return {
         status: 'succeeded',
@@ -128,12 +150,13 @@ export function createSaveConfluencePageOperation(
   };
 }
 
-function notionAuthOptions(options: SaveConfluencePageOperationOptions, deadlineMs: number): NotionAuthOptions {
+function notionAuthOptions(options: SaveConfluencePageOperationOptions, deadlineMs: number, debugLogger: DebugLogger): NotionAuthOptions {
   return {
     config: options.notionConfig ?? notionOAuthConfig,
     fetcher: options.fetcher,
     now: options.now,
-    deadlineMs
+    deadlineMs,
+    debugLogger
   };
 }
 
@@ -164,6 +187,28 @@ function buildResult(context: ClipTaskOperationContext, state: PipelineState, op
     warningCount: state.warnings.length,
     elapsedMs: Math.max(0, (options.now?.() ?? new Date()).getTime() - Date.parse(context.startedAt))
   };
+}
+
+function countMacrosByType(document: ConfluenceStorageDocument): Record<string, number> {
+  const counts: Record<string, number> = {};
+
+  for (const macro of collectMacroElements(document.children)) {
+    const name = macro.attributes.find((attribute) => attribute.localName === 'name')?.value ?? 'unknown';
+    counts[name] = (counts[name] ?? 0) + 1;
+  }
+
+  return counts;
+}
+
+function collectMacroElements(nodes: ConfluenceStorageNode[]): ConfluenceStorageElement[] {
+  return nodes.flatMap((node) => {
+    if (node.type === 'text') {
+      return [];
+    }
+
+    const nested = collectMacroElements(node.children);
+    return node.namespacePrefix === 'ac' && node.localName === 'structured-macro' ? [node, ...nested] : nested;
+  });
 }
 
 function detectionFailureCode(reason: string): string {
