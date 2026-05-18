@@ -29,6 +29,62 @@ export interface ConfluenceAssetProcessingResult {
   degradations: Degradation[];
 }
 
+export type NotionAssetBlock =
+  | NotionAssetFileUploadBlock
+  | NotionAssetExternalImageBlock
+  | NotionAssetParagraphBlock;
+
+export interface NotionAssetFileUploadBlock {
+  object: 'block';
+  type: 'image' | 'file' | 'video' | 'audio' | 'pdf';
+  image?: NotionFileUploadPayload;
+  file?: NotionFileUploadPayload;
+  video?: NotionFileUploadPayload;
+  audio?: NotionFileUploadPayload;
+  pdf?: NotionFileUploadPayload;
+}
+
+export interface NotionAssetExternalImageBlock {
+  object: 'block';
+  type: 'image';
+  image: {
+    type: 'external';
+    external: {
+      url: string;
+    };
+  };
+}
+
+export interface NotionAssetParagraphBlock {
+  object: 'block';
+  type: 'paragraph';
+  paragraph: {
+    rich_text: Array<{
+      type: 'text';
+      text: {
+        content: string;
+        link?: {
+          url: string;
+        };
+      };
+      annotations: Record<string, never>;
+    }>;
+  };
+}
+
+export interface NotionFileUploadPayload {
+  type: 'file_upload';
+  file_upload: {
+    id: string;
+  };
+}
+
+export interface ConfluenceAssetRenderingResult {
+  blocks: NotionAssetBlock[];
+  warningCount: number;
+  degradations: Degradation[];
+}
+
 export interface NotionFileUploadCreateRequest {
   filename: string;
   mimeType: string;
@@ -106,6 +162,102 @@ export async function processConfluenceAssets(
     assets: processed,
     degradations: processed.flatMap((asset) => (asset.degradation ? [asset.degradation] : []))
   };
+}
+
+export function renderProcessedAssetsToNotionBlocks(assets: ProcessedConfluenceAsset[]): ConfluenceAssetRenderingResult {
+  const blocks = assets.flatMap(renderProcessedAssetToNotionBlocks);
+  const degradations = assets.flatMap((asset) => (asset.degradation ? [asset.degradation] : []));
+  const warningCount = assets.filter((asset) => asset.status === 'skipped' || asset.status === 'failed' || asset.degradation?.severity === 'warning').length;
+
+  return {
+    blocks,
+    warningCount,
+    degradations
+  };
+}
+
+function renderProcessedAssetToNotionBlocks(asset: ProcessedConfluenceAsset): NotionAssetBlock[] {
+  const uploadId = asset.notionFileRef?.fileUploadId;
+  if (asset.status === 'uploaded' && uploadId) {
+    const renderedBlock = createFileUploadBlock(asset.kind === 'drawio' ? 'image' : asset.kind, uploadId);
+    return asset.drawioSourceUrl ? [renderedBlock, createLinkParagraph(`Draw.io source: ${asset.filename ?? 'source'}`, asset.drawioSourceUrl)] : [renderedBlock];
+  }
+
+  const externalUrl = asset.notionFileRef?.externalUrl ?? asset.sourceUrl;
+  if (asset.kind === 'image' && asset.classification === 'cross-origin' && isDirectlyUsableExternalImageUrl(externalUrl)) {
+    return [createExternalImageBlock(externalUrl)];
+  }
+
+  return [createLinkParagraph(asset.filename ?? filenameFromUrl(externalUrl) ?? externalUrl, externalUrl)];
+}
+
+function createFileUploadBlock(kind: AssetKind, fileUploadId: string): NotionAssetFileUploadBlock {
+  const blockType = kind === 'drawio' ? 'image' : kind;
+  if (blockType === 'image') {
+    return { object: 'block', type: 'image', image: createFileUploadPayload(fileUploadId) };
+  }
+  if (blockType === 'video') {
+    return { object: 'block', type: 'video', video: createFileUploadPayload(fileUploadId) };
+  }
+  if (blockType === 'audio') {
+    return { object: 'block', type: 'audio', audio: createFileUploadPayload(fileUploadId) };
+  }
+  if (blockType === 'pdf') {
+    return { object: 'block', type: 'pdf', pdf: createFileUploadPayload(fileUploadId) };
+  }
+  return { object: 'block', type: 'file', file: createFileUploadPayload(fileUploadId) };
+}
+
+function createFileUploadPayload(fileUploadId: string): NotionFileUploadPayload {
+  return {
+    type: 'file_upload',
+    file_upload: {
+      id: fileUploadId
+    }
+  };
+}
+
+function createExternalImageBlock(url: string): NotionAssetExternalImageBlock {
+  return {
+    object: 'block',
+    type: 'image',
+    image: {
+      type: 'external',
+      external: {
+        url
+      }
+    }
+  };
+}
+
+function createLinkParagraph(label: string, url: string): NotionAssetParagraphBlock {
+  return {
+    object: 'block',
+    type: 'paragraph',
+    paragraph: {
+      rich_text: [
+        {
+          type: 'text',
+          text: {
+            content: label,
+            link: {
+              url
+            }
+          },
+          annotations: {}
+        }
+      ]
+    }
+  };
+}
+
+function isDirectlyUsableExternalImageUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return ['http:', 'https:'].includes(parsed.protocol) && /\.(png|jpe?g|gif|webp)$/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
 }
 
 async function processSingleAsset(

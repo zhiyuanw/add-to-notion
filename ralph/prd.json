@@ -333,8 +333,8 @@
         "Typecheck passes"
       ],
       "priority": 19,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented processed asset rendering to Notion image/file/video/audio/pdf blocks, cross-origin image fallbacks, Draw.io source preservation, and warning-count behavior without per-image callouts."
     },
     {
       "id": "US-020",

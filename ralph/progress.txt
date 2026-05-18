@@ -21,6 +21,7 @@
 - Macro conversion belongs in `src/converter/index.ts` by detecting `ac:structured-macro`; macro-heavy fixtures should cover supported and unknown macros.
 - Asset discovery lives in `src/assets/index.ts`; it consumes parsed storage AST plus `ConfluencePageData.attachments` and classifies same-origin assets independently from context-path guards.
 - Asset processing lives in `src/assets/index.ts`; use `processConfluenceAssets` with injected fetch/upload hooks in tests and keep source-link degradations as warnings.
+- Asset rendering also lives in `src/assets/index.ts`; use `renderProcessedAssetsToNotionBlocks` to turn processed assets into Notion file/image blocks or link fallbacks without per-image callouts.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -264,5 +265,19 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
   - Asset processing extends `src/assets/index.ts`; tests should inject fetch/upload hooks to avoid real Notion or network calls.
   - Asset fallbacks should keep the original source URL as `notionFileRef.externalUrl` with a warning degradation for later rendering stories.
   - Run project quality commands from the repository root; starting in `ralph/` makes Vitest miss `src/**/*.test.ts`.
+
+---
+
+## 2026-05-18 19:50 - US-019
+
+- Implemented processed asset rendering for uploaded image, file, video, audio, and PDF assets using Notion file upload block references.
+- Added cross-origin external image handling: directly usable external images become Notion external image blocks, while unusable or internal failed assets become ordinary link paragraphs.
+- Added Draw.io rendering fallback support that uses the rendered image when uploaded and preserves the optional source link.
+- Added image-heavy asset rendering tests for attachment-style uploads, external images, broken image fallbacks, Draw.io source preservation, and multiple failed image assets without per-image callouts.
+- Verified `npm run build`, `npm run typecheck`, and `npm test` pass.
+- Files changed: `src/assets/index.ts`, `src/tests/assetsRendering.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Asset rendering is separate from asset upload processing; call `renderProcessedAssetsToNotionBlocks` after `processConfluenceAssets` when later pipeline stories need Notion blocks for assets.
+  - Failed same-origin Confluence assets should stay as source-link paragraphs rather than Notion external images, because internal URLs may not be usable from Notion.
 
 ---
