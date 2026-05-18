@@ -14,6 +14,7 @@
 - Notion auth/session helpers live in `src/notion/auth.ts`; use `notionApiFetch` before Notion API calls so expired tokens refresh and failed refresh clears session state.
 - Notion target discovery helpers live in `src/notion/targets.ts`; target selection persists through `storageKeys.notionDefaultTarget`.
 - Confluence page detection lives in `src/confluence/detector.ts`; it must check host permission and enforce the normalized base URL context path before matching page URL forms.
+- Confluence storage fetching lives in `src/confluence/fetcher.ts`; it uses `credentials: 'include'`, enforces the base URL path, and maps recoverable HTTP failures to typed reasons.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -164,5 +165,20 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
   - Confluence detection should return a typed failure reason rather than throwing for unsupported pages or missing permissions.
   - Use `hasConfluenceHostPermission` before matching Confluence page URL forms so detector and future fetchers share the same origin-permission boundary.
   - Keep context-path enforcement separate from host permission because Chrome permissions are origin-scoped only.
+
+---
+
+## 2026-05-18 19:02 - US-012
+
+- Implemented Confluence REST storage fetcher for `/rest/api/content/{pageId}` with required expand fields and `credentials: 'include'`.
+- Added normalized base URL path enforcement before network fetches, including validation that the page ref URL remains inside the configured Confluence context path.
+- Added typed failure mapping for 401/403, 404, 5xx, network errors, and invalid responses.
+- Extracted Confluence title, storage XML, labels, version metadata, space metadata, and attachment metadata into the shared `ConfluencePageData` contract.
+- Added unit tests for request URL, credentials mode, path guard, response mapping, metadata extraction, and attachment extraction.
+- Verified `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Files changed: `src/confluence/fetcher.ts`, `src/confluence/index.ts`, `src/tests/confluenceFetcher.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Confluence REST fetch code should use `src/confluence/fetcher.ts` and return typed failure reasons rather than throwing for expected HTTP failures.
+  - Keep host-permission checks in detector/options; the fetcher enforces the configured base URL path and uses browser session cookies via `credentials: 'include'` without requesting `cookies` permission.
 
 ---
