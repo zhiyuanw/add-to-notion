@@ -146,7 +146,8 @@ describe('Notion token exchange and persistence', () => {
         grant_type: 'authorization_code',
         code: 'auth-code',
         redirect_uri: testConfig.redirectUri
-      })
+      }),
+      signal: expect.any(AbortSignal)
     });
   });
 

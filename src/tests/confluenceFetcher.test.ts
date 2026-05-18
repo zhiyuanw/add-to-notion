@@ -95,7 +95,7 @@ describe('Confluence storage fetcher', () => {
 
     expect(fetcher).toHaveBeenCalledWith(
       'https://confluence.example.com/wiki/rest/api/content/12345?expand=body.storage%2Cmetadata.labels%2Cversion%2Cspace%2Cchildren.attachment',
-      { credentials: 'include' }
+      { credentials: 'include', signal: expect.any(AbortSignal) }
     );
   });
 

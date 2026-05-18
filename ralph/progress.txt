@@ -15,6 +15,7 @@
 - Notion target discovery helpers live in `src/notion/targets.ts`; target selection persists through `storageKeys.notionDefaultTarget`.
 - Confluence page detection lives in `src/confluence/detector.ts`; it must check host permission and enforce the normalized base URL context path before matching page URL forms.
 - Confluence storage fetching lives in `src/confluence/fetcher.ts`; it uses `credentials: 'include'`, enforces the base URL path, and maps recoverable HTTP failures to typed reasons.
+- Route external HTTP calls through `src/shared/request.ts` to apply 30s timeout, retry policy, 429 retry hints, and caller-provided deadlines.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -180,5 +181,18 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Confluence REST fetch code should use `src/confluence/fetcher.ts` and return typed failure reasons rather than throwing for expected HTTP failures.
   - Keep host-permission checks in detector/options; the fetcher enforces the configured base URL path and uses browser session cookies via `credentials: 'include'` without requesting `cookies` permission.
+
+---
+
+## 2026-05-18 19:12 - US-013
+
+- Implemented a shared `fetchWithTimeoutAndRetry` wrapper with a 30-second per-request timeout, two retry attempts, retryable network/408/429/5xx handling, 429 `Retry-After` support, and caller-provided deadline enforcement.
+- Routed Confluence storage fetches, Notion OAuth token exchange, Notion token refresh, and Notion API fetches through the wrapper.
+- Added unit tests with fake timers for timeout, retryable statuses, non-retryable statuses, retry hints, and deadline exhaustion.
+- Verified `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Files changed: `src/shared/request.ts`, `src/confluence/fetcher.ts`, `src/notion/auth.ts`, `src/notion/oauth.ts`, `src/tests/request.test.ts`, `src/tests/confluenceFetcher.test.ts`, `src/tests/notionAuth.test.ts`, `src/tests/notionOAuth.test.ts`, `src/tests/notionTargets.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Route future external HTTP calls through `src/shared/request.ts` so timeout/retry/deadline behavior stays consistent across Confluence, asset, and Notion APIs.
+  - Tests that assert injected fetch calls should allow the wrapper-added `AbortSignal` in `RequestInit`.
 
 ---

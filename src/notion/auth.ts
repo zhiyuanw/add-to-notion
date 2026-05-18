@@ -7,12 +7,14 @@ import {
   type NotionAuthState,
   type NotionWorkspaceInfo
 } from '../shared/storage';
+import { fetchWithTimeoutAndRetry, type RetriableFetchAttempt } from '../shared/request';
 import { notionOAuthConfig, type NotionOAuthConfig } from './oauth';
 
 export interface NotionAuthOptions {
   config?: NotionOAuthConfig;
-  fetcher?: typeof fetch;
+  fetcher?: RetriableFetchAttempt;
   now?: () => Date;
+  deadlineMs?: number;
 }
 
 export interface NotionAuthorizationStatus {
@@ -65,10 +67,12 @@ export async function refreshNotionAccessToken(
     throw new NotionAuthError('notion-refresh-token-missing');
   }
 
-  const response = await (options.fetcher ?? fetch)(config.tokenEndpoint, {
+  const response = await fetchWithTimeoutAndRetry(config.tokenEndpoint, {
+    fetcher: options.fetcher,
     method: 'POST',
     headers: buildTokenRefreshHeaders(config),
-    body: JSON.stringify(buildTokenRefreshBody(authState.refreshToken, config))
+    body: JSON.stringify(buildTokenRefreshBody(authState.refreshToken, config)),
+    deadlineMs: options.deadlineMs
   });
 
   if (!response.ok) {
@@ -97,7 +101,7 @@ export async function notionApiFetch(input: RequestInfo | URL, init: RequestInit
     headers.set('Accept', 'application/json');
   }
 
-  return (options.fetcher ?? fetch)(input, { ...init, headers });
+  return fetchWithTimeoutAndRetry(input, { ...init, fetcher: options.fetcher, headers, deadlineMs: options.deadlineMs });
 }
 
 export async function logoutNotion(): Promise<void> {

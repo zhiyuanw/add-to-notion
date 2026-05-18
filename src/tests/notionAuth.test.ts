@@ -114,7 +114,8 @@ describe('Notion token refresh and API authorization', () => {
       body: JSON.stringify({
         grant_type: 'refresh_token',
         refresh_token: 'refresh-token'
-      })
+      }),
+      signal: expect.any(AbortSignal)
     });
     expect(chrome.storage.local.set).toHaveBeenCalledWith({
       [storageKeys.notionAuthState]: {

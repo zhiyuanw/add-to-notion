@@ -1,3 +1,4 @@
+import { fetchWithTimeoutAndRetry, type RetriableFetchAttempt } from '../shared/request';
 import { storageKeys, writeLocalStorageValue } from '../shared/storage';
 import type { NotionAuthState, NotionWorkspaceInfo } from '../shared/storage';
 
@@ -32,7 +33,8 @@ interface StartNotionOAuthOptions {
   config?: NotionOAuthConfig;
   now?: () => Date;
   createState?: () => string;
-  fetcher?: typeof fetch;
+  fetcher?: RetriableFetchAttempt;
+  deadlineMs?: number;
 }
 
 interface NotionOAuthTokenResponse {
@@ -71,7 +73,8 @@ export async function startNotionOAuth(options: StartNotionOAuthOptions = {}): P
   const result = await exchangeNotionAuthorizationCode(code, redirectUri, {
     config,
     now: options.now,
-    fetcher: options.fetcher
+    fetcher: options.fetcher,
+    deadlineMs: options.deadlineMs
   });
 
   await persistNotionOAuthResult(result);
@@ -122,15 +125,17 @@ export function parseNotionOAuthCallback(callbackUrl: string, expectedState: str
 export async function exchangeNotionAuthorizationCode(
   code: string,
   redirectUri: string,
-  options: Pick<StartNotionOAuthOptions, 'config' | 'now' | 'fetcher'> = {}
+  options: Pick<StartNotionOAuthOptions, 'config' | 'now' | 'fetcher' | 'deadlineMs'> = {}
 ): Promise<NotionOAuthResult> {
   const config = options.config ?? notionOAuthConfig;
   assertConfiguredClient(config);
 
-  const response = await (options.fetcher ?? fetch)(config.tokenEndpoint, {
+  const response = await fetchWithTimeoutAndRetry(config.tokenEndpoint, {
+    fetcher: options.fetcher,
     method: 'POST',
     headers: buildTokenExchangeHeaders(config),
-    body: JSON.stringify(buildTokenExchangeBody(code, redirectUri, config))
+    body: JSON.stringify(buildTokenExchangeBody(code, redirectUri, config)),
+    deadlineMs: options.deadlineMs
   });
 
   if (!response.ok) {

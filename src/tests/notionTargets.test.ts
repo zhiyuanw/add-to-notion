@@ -113,7 +113,8 @@ describe('Notion target discovery and selection', () => {
     expect(fetcher).toHaveBeenCalledWith('https://api.notion.com/v1/search', {
       method: 'POST',
       headers: expect.any(Headers),
-      body: JSON.stringify({ query: 'eng', page_size: 100 })
+      body: JSON.stringify({ query: 'eng', page_size: 100 }),
+      signal: expect.any(AbortSignal)
     });
   });
 
@@ -181,7 +182,8 @@ describe('Notion target discovery and selection', () => {
 
     expect(fetcher).toHaveBeenCalledWith('https://api.notion.com/v1/databases/database-1', {
       method: 'GET',
-      headers: expect.any(Headers)
+      headers: expect.any(Headers),
+      signal: expect.any(AbortSignal)
     });
     expect(storage.get(storageKeys.notionDefaultTarget)).toEqual({
       type: 'database',
