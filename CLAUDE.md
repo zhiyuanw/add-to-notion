@@ -105,6 +105,7 @@ Important architectural constraints:
 - Asset uploads have concurrency limit 3; files over 20 MB are skipped and preserved as links.
 - Uploaded Notion file references must be attached within 1 hour; do not persist uploaded file URLs as durable references.
 - Route typed `chrome.storage.local` access through `src/shared/storage/local.ts`; logout cleanup removes Notion state and last terminal summary while preserving the Confluence base URL.
+- Route Notion API requests through `src/notion/auth.ts` `notionApiFetch` so expired access tokens refresh before calls and refresh failures clear Notion session state.
 - Background task runner must allow only one non-terminal `ClipTask`; duplicate save clicks show existing progress.
 - If Notion page creation succeeds but later block append fails, do not archive/delete/clear the partial page.
 

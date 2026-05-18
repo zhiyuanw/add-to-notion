@@ -133,8 +133,8 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented Notion token refresh, authorized API fetch helper, authorization status helper, logout cleanup, and tests."
     },
     {
       "id": "US-009",

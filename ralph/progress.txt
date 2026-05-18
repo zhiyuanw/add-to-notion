@@ -10,6 +10,7 @@
 - Request and check Confluence host permissions through `src/confluence/permissions.ts`; permissions are origin-scoped, not context-path-scoped.
 - Options UI logic can be tested with `happy-dom` and exported mount/render helpers from `src/options/index.ts`.
 - Notion OAuth helpers live in `src/notion/oauth.ts`; inject `fetcher`, `now`, and `createState` in tests instead of relying on real network or time.
+- Notion auth/session helpers live in `src/notion/auth.ts`; use `notionApiFetch` before Notion API calls so expired tokens refresh and failed refresh clears session state.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -103,5 +104,18 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Notion OAuth code supports dependency injection for `fetcher`, `now`, and `createState`, which keeps tests deterministic without real network calls.
   - The default OAuth client ID is a placeholder; real builds must provide configured Notion OAuth app details before interactive authorization can run.
+
+---
+
+## 2026-05-18 18:35 - US-008
+
+- Implemented Notion auth/session helpers for expired-token detection, refresh-token exchange, authorized Notion API fetches, authorization status, and logout.
+- Refresh failures now clear Notion auth state, workspace info, default target, and last terminal ClipTask summary while preserving the Confluence base URL.
+- Added mocked unit tests for successful refresh, refresh-token rotation fallback, unexpired token reuse, pre-API refresh, failed refresh cleanup, logout cleanup, and token-free status reporting.
+- Verified `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Files changed: `src/notion/auth.ts`, `src/notion/index.ts`, `src/tests/notionAuth.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Use `notionApiFetch` for future Notion API wrappers so calls get a valid access token and consistent `Notion-Version`/`Authorization` headers.
+  - Failed refresh and explicit logout intentionally share `clearNotionSessionState`, preserving Confluence configuration but removing the last terminal task summary.
 
 ---
