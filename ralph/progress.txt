@@ -11,6 +11,7 @@
 - Options UI logic can be tested with `happy-dom` and exported mount/render helpers from `src/options/index.ts`.
 - Notion OAuth helpers live in `src/notion/oauth.ts`; inject `fetcher`, `now`, and `createState` in tests instead of relying on real network or time.
 - Notion auth/session helpers live in `src/notion/auth.ts`; use `notionApiFetch` before Notion API calls so expired tokens refresh and failed refresh clears session state.
+- Notion target discovery helpers live in `src/notion/targets.ts`; target selection persists through `storageKeys.notionDefaultTarget`.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -117,5 +118,19 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Use `notionApiFetch` for future Notion API wrappers so calls get a valid access token and consistent `Notion-Version`/`Authorization` headers.
   - Failed refresh and explicit logout intentionally share `clearNotionSessionState`, preserving Confluence configuration but removing the last terminal task summary.
+
+---
+
+## 2026-05-18 18:42 - US-009
+
+- Implemented Notion target discovery through the Notion search API for accessible pages and databases.
+- Added empty-result guidance telling users to grant the integration access in Notion.
+- Added target selection persistence for page targets and database metadata lookup/persistence with title property name and id.
+- Added invalid target type validation and unit tests covering page target, database target, empty list, and invalid type behavior.
+- Verified `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Files changed: `src/notion/index.ts`, `src/notion/targets.ts`, `src/tests/notionTargets.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Notion target discovery helpers live in `src/notion/targets.ts` and use `notionApiFetch` so future Notion wrappers inherit refresh behavior.
+  - Store default Notion targets through `storageKeys.notionDefaultTarget`; database targets should include the database title property name/id after metadata lookup.
 
 ---
