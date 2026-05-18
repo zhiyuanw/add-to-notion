@@ -1,0 +1,1 @@
+export const notionModuleName = 'notion';

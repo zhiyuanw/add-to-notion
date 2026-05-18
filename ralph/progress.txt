@@ -1,3 +1,34 @@
 # Ralph Progress
 
+## Codebase Patterns
+
+- Use npm scripts as the project quality gate: `npm run build`, `npm run typecheck`, and `npm test`.
+- MV3 static assets live in `public/`; extension entrypoints live in `src/background`, `src/popup`, and `src/options`.
+- Shared domain contracts live in `src/shared/domain`; storage key contracts live in `src/shared/storage`.
+
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
+
+## 2026-05-18 17:45 - US-001
+
+- Implemented a TypeScript Chrome Extension MV3 scaffold with package manifest, lockfile, TS config, Vitest config, and MV3 manifest.
+- Added popup, options, background, shared/domain, Confluence, Notion, converter, assets, and tests source folders.
+- Added build, typecheck, and test scripts; verified all three pass.
+- Updated root CLAUDE.md with current npm commands.
+- Files changed: `.gitignore`, `CLAUDE.md`, `package.json`, `package-lock.json`, `public/manifest.json`, `public/popup.html`, `public/options.html`, `scripts/build-extension.mjs`, `src/**`, `tsconfig.json`, `tsconfig.build.json`, `vitest.config.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Static extension pages and manifest are copied from `public/` into `dist/` by `scripts/build-extension.mjs`.
+  - `tsconfig.build.json` emits only MV3 entrypoint JavaScript, then the build script flattens names to match manifest references.
+  - `npm audit --omit=dev` is clean; current audit warnings are limited to development dependencies.
+---
+
+## 2026-05-18 17:50 - US-002
+
+- Implemented typed domain contracts for ConfluencePageRef, ConfluencePageData, NotionTarget, ClipTask, AssetRef, and Degradation.
+- Added exact ClipTask status constants, terminal status constants, and terminal status helper.
+- Added storage key constants for Notion auth state, workspace info, default target, Confluence base URL, active ClipTask lock, and last terminal ClipTask summary.
+- Added unit tests for ClipTask terminal status helpers and storage key constants; verified build, typecheck, and tests pass.
+- Files changed: `src/shared/domain/clipTask.ts`, `src/shared/domain/index.ts`, `src/shared/domain/models.ts`, `src/shared/storage/index.ts`, `src/shared/storage/keys.ts`, `src/tests/domainStorage.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Shared domain exports are centralized through `src/shared/domain/index.ts`.
+  - Persisted storage key names are centralized in `src/shared/storage/keys.ts` to keep later storage helpers and logout cleanup aligned.
+---

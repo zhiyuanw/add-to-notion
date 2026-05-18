@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository status
 
-This repository currently contains a product/technical spec only. There is no application source tree, package manifest, test runner, build config, README, Cursor rules, or Copilot instructions checked in yet.
+This repository contains a TypeScript Chrome Extension MV3 scaffold plus the product/technical spec.
 
 Primary source of truth:
 
@@ -12,19 +12,24 @@ Primary source of truth:
 
 ## Commands
 
-No build, lint, test, or dev-server commands exist yet because no implementation scaffold is present.
-
-Useful current commands:
-
 ```bash
-# Inspect repo state
-git status --short --branch
+# Install dependencies
+npm install
 
-# List tracked/untracked project files
-find . -maxdepth 3 -type f | sort
+# Build extension into dist/
+npm run build
+
+# Typecheck
+npm run typecheck
+
+# Full test suite
+npm test
+
+# Single test file
+npx vitest run src/tests/scaffold.test.ts
 ```
 
-When implementation is added, update this section with the actual package manager and commands for:
+When implementation tooling changes, update this section with the actual package manager and commands for:
 
 - dependency install
 - dev server / extension watch build

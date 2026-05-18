@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": false,
+    "types": ["chrome"]
+  },
+  "include": ["src/background/index.ts", "src/popup/index.ts", "src/options/index.ts"]
+}
