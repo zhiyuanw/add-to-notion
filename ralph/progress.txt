@@ -9,6 +9,7 @@
 - Normalize and validate Confluence base URLs through `src/confluence/baseUrl.ts`; store them via `saveConfluenceBaseUrl`.
 - Request and check Confluence host permissions through `src/confluence/permissions.ts`; permissions are origin-scoped, not context-path-scoped.
 - Options UI logic can be tested with `happy-dom` and exported mount/render helpers from `src/options/index.ts`.
+- Mount the full Options page through `mountOptionsPage`; keep section-specific helpers testable with injected dependencies.
 - Notion OAuth helpers live in `src/notion/oauth.ts`; inject `fetcher`, `now`, and `createState` in tests instead of relying on real network or time.
 - Notion auth/session helpers live in `src/notion/auth.ts`; use `notionApiFetch` before Notion API calls so expired tokens refresh and failed refresh clears session state.
 - Notion target discovery helpers live in `src/notion/targets.ts`; target selection persists through `storageKeys.notionDefaultTarget`.
@@ -132,5 +133,21 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Notion target discovery helpers live in `src/notion/targets.ts` and use `notionApiFetch` so future Notion wrappers inherit refresh behavior.
   - Store default Notion targets through `storageKeys.notionDefaultTarget`; database targets should include the database title property name/id after metadata lookup.
+
+---
+
+
+## 2026-05-18 18:50 - US-010
+
+- Implemented the Options page Notion settings UI with authorization status, connect/logout actions, target search, selected target display, target result selection, empty access guidance, and status messages.
+- Added `mountOptionsPage` to render both Confluence and Notion settings while preserving existing Confluence configuration across Notion logout.
+- Added `happy-dom` tests for OAuth connect, page target selection, database target selection, empty target guidance, and logout cleanup boundaries.
+- Verified `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Browser verification was not performed because no browser testing MCP/dev-browser tool is available in this session; manual extension options-page verification is still recommended.
+- Files changed: `src/options/index.ts`, `src/tests/optionsNotion.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Use `mountOptionsPage` for full Options page behavior; section-specific helpers remain useful for narrower DOM tests.
+  - Notion Options UI tests should inject OAuth config, `createState`, and `now` to avoid placeholder client config and nondeterministic time.
+  - Notion logout in the UI relies on `logoutNotion`, so it clears Notion state and last terminal summary while leaving the Confluence base URL visible.
 
 ---
