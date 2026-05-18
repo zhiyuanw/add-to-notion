@@ -29,6 +29,7 @@
 - Popup UI logic can be tested with `happy-dom` and exported `mountPopupPage` from `src/popup/index.ts`; background save starts via `clip.saveCurrentPage` runtime messages.
 - ClipTask completion feedback lives in `src/background/notifications.ts`; `persistTerminalTask` triggers success/failure notifications and badge updates.
 - Developer debug logging lives in `src/shared/debugLogger.ts`; it is quiet by default, must be explicitly enabled, and redacts tokens/cookies/authorization values before writing structured entries.
+- Shared sanitized release fixtures live in `src/tests/fixtures.ts`; release checklist coverage is centralized in `src/tests/releaseChecklist.test.ts`.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -355,6 +356,7 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - Files changed: `src/popup/index.ts`, `src/background/index.ts`, `src/tests/popupSave.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
 - **Learnings for future iterations:**
   - Popup UI can expose `mountPopupPage` from `src/popup/index.ts` so DOM behavior is testable under `happy-dom`.
+
 ---
 
 ## 2026-05-18 20:54 - US-025
@@ -371,14 +373,14 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
 ---
 
-## 2026-05-18 21:03 - US-026
+## 2026-05-18 21:11 - US-027
 
-- Implemented structured developer debug logging with recursive redaction for access tokens, refresh tokens, cookie values, and authorization headers.
-- Added quiet-by-default logger behavior with explicit enablement, plus pipeline logs for stage start/end, Confluence fetch status, XML parse summary, macro counts, asset upload summary, and Notion write batch summary.
-- Added unit tests for redaction, default quiet mode, enabled structured entries, and required summary helpers.
+- Added sanitized release fixtures named `simple`, `macro-heavy`, and `image-heavy`.
+- Added a V1 release checklist matrix test covering base URL normalization, supported page detection, host permission path guard, XML external entity blocking, macro conversion, unknown macro fallback, asset concurrency, oversized assets, failed uploads, database/page targets, re-save behavior, append batching, duplicate save, logout retention, and service worker startup recovery.
 - Verified `npm run typecheck`, `npm test`, and `npm run build` pass.
-- Files changed: `src/shared/debugLogger.ts`, `src/tests/debugLogger.test.ts`, `src/background/savePipeline.ts`, `src/confluence/fetcher.ts`, `src/assets/index.ts`, `src/notion/auth.ts`, `src/notion/writer.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- Files changed: `src/tests/fixtures.ts`, `src/tests/releaseChecklist.test.ts`, `ralph/prd.json`, `ralph/progress.txt`, `ralph/DONE.md`.
 - **Learnings for future iterations:**
-  - Developer logs should use `createDebugLogger` and pass `debugLogger` through operation options instead of calling `console` directly.
-  - Debug logging is intentionally disabled unless explicitly enabled, so production and tests stay quiet by default.
+  - Release-level acceptance coverage can reuse the same public APIs as story tests, keeping the checklist as an executable matrix instead of duplicating production logic.
+  - `ri:attachment` storage references currently resolve relative to the normalized Confluence base URL origin unless a path is supplied; use explicit `ri:url` values when tests need in-context-path assets.
+
 ---
