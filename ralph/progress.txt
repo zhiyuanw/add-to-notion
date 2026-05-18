@@ -24,6 +24,7 @@
 - Asset rendering also lives in `src/assets/index.ts`; use `renderProcessedAssetsToNotionBlocks` to turn processed assets into Notion file/image blocks or link fallbacks without per-image callouts.
 - Notion page creation lives in `src/notion/writer.ts`; `createNotionPage` always POSTs to `/v1/pages` and never searches, dedupes, or updates old clipped pages.
 - Full clipped-page writes use `writeClippedNotionPage` in `src/notion/writer.ts`; it creates the page first, then appends metadata/content blocks in batches of at most 100.
+- Background task state lives in `src/background/clipTaskRunner.ts`; use `startBackgroundClipTask` for one active non-terminal task and startup recovery.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -309,5 +310,20 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Use `writeClippedNotionPage` for complete Notion write behavior after conversion; it appends metadata/content via `/v1/blocks/{pageId}/children` rather than putting children on the create-page request.
   - Append failure tests must account for the shared retry wrapper retrying HTTP 5xx responses before surfacing the final failure.
+
+---
+
+## 2026-05-18 20:15 - US-022
+
+- Implemented the background ClipTask runner for MV3 service worker save work.
+- Added single non-terminal ClipTask locking so duplicate save clicks return existing progress instead of starting new work.
+- Added overall task timeout handling, startup recovery for interrupted persisted tasks, and last terminal summary persistence.
+- Added unit tests for state transitions, duplicate save, timeout failure, startup recovery, terminal-task startup behavior, and summary retention.
+- Verified `npm run build`, `npm run typecheck`, and `npm test` pass.
+- Files changed: `src/background/clipTaskRunner.ts`, `src/background/index.ts`, `src/tests/backgroundClipTaskRunner.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Use `startBackgroundClipTask` for future save orchestration so duplicate save clicks share the same active task lock.
+  - `recoverInterruptedClipTaskOnStartup` is invoked by the background entrypoint and converts persisted non-terminal tasks into retryable failures.
+  - Tests that run package scripts should start from the repository root; the active Claude working directory may be `ralph/`.
 
 ---

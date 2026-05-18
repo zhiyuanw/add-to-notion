@@ -390,8 +390,8 @@
         "Typecheck passes"
       ],
       "priority": 22,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented MV3 background ClipTask runner with single non-terminal task lock, duplicate-save progress return, 5-minute timeout, service worker startup recovery, and last terminal summary persistence."
     },
     {
       "id": "US-023",
