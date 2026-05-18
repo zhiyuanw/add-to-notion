@@ -240,8 +240,8 @@
         "Typecheck passes"
       ],
       "priority": 14,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented safe Confluence storage XML parser with namespace-preserving AST, external entity blocking, unsupported raw HTML degradation, malformed XML parse failures, and tests."
     },
     {
       "id": "US-015",

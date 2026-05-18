@@ -16,6 +16,7 @@
 - Confluence page detection lives in `src/confluence/detector.ts`; it must check host permission and enforce the normalized base URL context path before matching page URL forms.
 - Confluence storage fetching lives in `src/confluence/fetcher.ts`; it uses `credentials: 'include'`, enforces the base URL path, and maps recoverable HTTP failures to typed reasons.
 - Route external HTTP calls through `src/shared/request.ts` to apply 30s timeout, retry policy, 429 retry hints, and caller-provided deadlines.
+- Parse Confluence storage XML through `src/confluence/storageParser.ts`; it preserves namespace-qualified nodes, blocks external entities, degrades unsafe raw HTML, and returns typed parse failures.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -139,7 +140,6 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
 ---
 
-
 ## 2026-05-18 18:50 - US-010
 
 - Implemented the Options page Notion settings UI with authorization status, connect/logout actions, target search, selected target display, target result selection, empty access guidance, and status messages.
@@ -194,5 +194,19 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 - **Learnings for future iterations:**
   - Route future external HTTP calls through `src/shared/request.ts` so timeout/retry/deadline behavior stays consistent across Confluence, asset, and Notion APIs.
   - Tests that assert injected fetch calls should allow the wrapper-added `AbortSignal` in `RequestInit`.
+
+---
+
+## 2026-05-18 19:18 - US-014
+
+- Implemented a safe Confluence storage XML parser that returns an internal AST and preserves namespace-qualified `ac:*` and `ri:*` nodes and attributes.
+- Blocked external entity declarations without resolving resources or making external requests.
+- Converted unsupported executable/renderable raw HTML elements to recoverable plain text with warning degradations, while malformed XML fails with a parse error.
+- Added unit tests for simple XML, namespace preservation, unsupported raw HTML, malformed XML, and external entity blocking.
+- Verified `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Files changed: `src/confluence/storageParser.ts`, `src/confluence/index.ts`, `src/tests/confluenceStorageParser.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Use `parseConfluenceStorageXml` before converter work so later conversion stories can consume a namespace-preserving AST instead of reparsing XML.
+  - Unsupported raw HTML is degraded locally during parsing; converters should consume resulting text/degradation data rather than preserving raw executable/renderable HTML.
 
 ---
