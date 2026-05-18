@@ -25,6 +25,7 @@
 - Notion page creation lives in `src/notion/writer.ts`; `createNotionPage` always POSTs to `/v1/pages` and never searches, dedupes, or updates old clipped pages.
 - Full clipped-page writes use `writeClippedNotionPage` in `src/notion/writer.ts`; it creates the page first, then appends metadata/content blocks in batches of at most 100.
 - Background task state lives in `src/background/clipTaskRunner.ts`; use `startBackgroundClipTask` for one active non-terminal task and startup recovery.
+- Full save orchestration lives in `src/background/savePipeline.ts`; create operations with `createSaveConfluencePageOperation` so detection, fetch, parse, convert, asset processing, and Notion writes share one terminal summary.
 
 Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
 
@@ -325,5 +326,18 @@ Generated from SPEC-Confluence-to-Notion-Chrome-Extension.md on 2026-05-18.
   - Use `startBackgroundClipTask` for future save orchestration so duplicate save clicks share the same active task lock.
   - `recoverInterruptedClipTaskOnStartup` is invoked by the background entrypoint and converts persisted non-terminal tasks into retryable failures.
   - Tests that run package scripts should start from the repository root; the active Claude working directory may be `ralph/`.
+
+---
+
+## 2026-05-18 20:40 - US-023
+
+- Implemented full Confluence-to-Notion save pipeline orchestration through `createSaveConfluencePageOperation`.
+- Added integration-style tests covering success with local warnings, missing configuration early failure, whole-document parse failure, partial Notion append failure with page URL retention, and repeated saves creating new pages.
+- Verified `npm run build`, `npm run typecheck`, and `npm test` pass.
+- Files changed: `src/background/savePipeline.ts`, `src/background/index.ts`, `src/tests/savePipeline.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Use `createSaveConfluencePageOperation` as the operation passed to `startBackgroundClipTask` when wiring popup save actions.
+  - Pipeline tests should seed typed storage state and inject one shared `fetcher` so Confluence, asset, and Notion calls stay deterministic.
+  - Success summaries count the metadata toggle appended by `writeClippedNotionPage`; pre-write failure summaries only count content blocks produced before the failure.
 
 ---
