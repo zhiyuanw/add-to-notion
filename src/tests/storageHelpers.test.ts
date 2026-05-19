@@ -85,12 +85,10 @@ describe('chrome.storage.local helpers', () => {
     expect(chrome.storage.local.remove).toHaveBeenCalledWith([storageKeys.notionDefaultTarget]);
   });
 
-  it('stores Notion access and refresh tokens only through local storage helpers', async () => {
+  it('stores Notion integration tokens only through local storage helpers', async () => {
     const authState: NotionAuthState = {
       accessToken: 'access-token',
-      refreshToken: 'refresh-token',
-      tokenType: 'bearer',
-      expiresAt: '2026-05-18T18:00:00.000Z'
+      tokenType: 'bearer'
     };
 
     await saveNotionAuthState(authState);
@@ -152,9 +150,7 @@ describe('chrome.storage.local helpers', () => {
 
     await writeLocalStorageValue(storageKeys.notionAuthState, {
       accessToken: 'access-token',
-      refreshToken: 'refresh-token',
-      tokenType: 'bearer',
-      expiresAt: '2026-05-18T18:00:00.000Z'
+      tokenType: 'bearer'
     });
     await writeLocalStorageValue(storageKeys.notionWorkspace, { workspaceId: 'workspace-1' });
     await writeLocalStorageValue(storageKeys.notionDefaultTarget, {

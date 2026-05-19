@@ -8,9 +8,9 @@
   },
   "options_page": "options.html",
   "background": {
-    "service_worker": "background.js",
+    "service_worker": "background/index.js",
     "type": "module"
   },
-  "permissions": ["identity", "storage", "notifications", "tabs", "activeTab", "scripting"],
+  "permissions": ["storage", "notifications", "tabs", "activeTab", "scripting"],
   "optional_host_permissions": ["http://*/*", "https://*/*"]
 }

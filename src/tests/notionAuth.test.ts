@@ -3,29 +3,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getNotionAuthorizationStatus,
   getValidNotionAuthState,
-  isNotionAccessTokenExpired,
   logoutNotion,
+  notionApiConfig,
   notionApiFetch,
-  notionOAuthConfig,
-  refreshNotionAccessToken,
-  type NotionOAuthConfig
+  saveNotionPersonalAccessToken,
+  validateNotionPersonalAccessToken,
+  type NotionApiConfig
 } from '../notion';
 import { storageKeys, writeLocalStorageValue, type NotionAuthState } from '../shared/storage';
 
 const storage = new Map<string, unknown>();
 
-const testConfig: NotionOAuthConfig = {
-  ...notionOAuthConfig,
-  clientId: 'notion-client-id',
-  clientSecret: 'notion-client-secret',
-  tokenEndpoint: 'https://api.notion.test/v1/oauth/token'
+const testConfig: NotionApiConfig = {
+  ...notionApiConfig,
+  notionVersion: '2022-06-28'
 };
 
-const expiredAuthState: NotionAuthState = {
-  accessToken: 'old-access-token',
-  refreshToken: 'refresh-token',
-  tokenType: 'bearer',
-  expiresAt: '2026-05-18T17:59:59.000Z'
+const authState: NotionAuthState = {
+  accessToken: 'secret_ntn_token',
+  tokenType: 'bearer'
 };
 
 beforeEach(() => {
@@ -66,181 +62,66 @@ beforeEach(() => {
   });
 });
 
-describe('Notion token refresh and API authorization', () => {
-  it('detects expired Notion access tokens', () => {
-    expect(isNotionAccessTokenExpired({ expiresAt: '2026-05-18T18:00:00.000Z' }, new Date('2026-05-18T18:00:00.000Z'))).toBe(
-      true
-    );
-    expect(isNotionAccessTokenExpired({ expiresAt: '2026-05-18T18:00:01.000Z' }, new Date('2026-05-18T18:00:00.000Z'))).toBe(
-      false
-    );
-    expect(isNotionAccessTokenExpired({ expiresAt: 'not-a-date' }, new Date('2026-05-18T18:00:00.000Z'))).toBe(true);
-  });
+describe('Notion personal access token authorization', () => {
+  it('validates a Notion integration token through users/me', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ object: 'user', id: 'bot-1', name: 'Docs Bot' }), { status: 200 }));
 
-  it('refreshes an expired access token and stores the replacement in chrome.storage.local', async () => {
-    const fetcher = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          access_token: 'new-access-token',
-          refresh_token: 'new-refresh-token',
-          token_type: 'bearer',
-          expires_in: 3600
-        }),
-        { status: 200 }
-      )
-    );
-
-    await expect(
-      refreshNotionAccessToken(expiredAuthState, {
-        config: testConfig,
-        fetcher,
-        now: () => new Date('2026-05-18T18:00:00.000Z')
-      })
-    ).resolves.toEqual({
-      accessToken: 'new-access-token',
-      refreshToken: 'new-refresh-token',
-      tokenType: 'bearer',
-      expiresAt: '2026-05-18T19:00:00.000Z'
+    await expect(validateNotionPersonalAccessToken(' secret_ntn_token ', { config: testConfig, fetcher })).resolves.toEqual({
+      workspaceId: 'bot-1',
+      workspaceName: 'Docs Bot',
+      botId: 'bot-1'
     });
 
-    expect(fetcher).toHaveBeenCalledWith(testConfig.tokenEndpoint, {
-      method: 'POST',
+    expect(fetcher).toHaveBeenCalledWith('https://api.notion.com/v1/users/me', {
+      method: 'GET',
       headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
+        Authorization: 'Bearer secret_ntn_token',
         'Notion-Version': testConfig.notionVersion,
-        Authorization: `Basic ${btoa('notion-client-id:notion-client-secret')}`
+        Accept: 'application/json'
       },
-      body: JSON.stringify({
-        grant_type: 'refresh_token',
-        refresh_token: 'refresh-token'
-      }),
       signal: expect.any(AbortSignal)
     });
-    expect(chrome.storage.local.set).toHaveBeenCalledWith({
-      [storageKeys.notionAuthState]: {
-        accessToken: 'new-access-token',
-        refreshToken: 'new-refresh-token',
-        tokenType: 'bearer',
-        expiresAt: '2026-05-18T19:00:00.000Z'
-      }
+  });
+
+  it('saves a token only after validation succeeds', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ object: 'user', id: 'bot-1', name: 'Docs Bot' }), { status: 200 }));
+
+    await saveNotionPersonalAccessToken('secret_ntn_token', { config: testConfig, fetcher });
+
+    expect(storage.get(storageKeys.notionAuthState)).toEqual(authState);
+    expect(storage.get(storageKeys.notionWorkspace)).toEqual({
+      workspaceId: 'bot-1',
+      workspaceName: 'Docs Bot',
+      botId: 'bot-1'
     });
   });
 
-  it('reuses the previous refresh token when Notion does not rotate it', async () => {
-    const fetcher = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          access_token: 'new-access-token',
-          token_type: 'bearer',
-          expires_in: 600
-        }),
-        { status: 200 }
-      )
-    );
+  it('rejects empty or invalid tokens without storing them', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 }));
 
-    await expect(
-      refreshNotionAccessToken(expiredAuthState, {
-        config: testConfig,
-        fetcher,
-        now: () => new Date('2026-05-18T18:00:00.000Z')
-      })
-    ).resolves.toMatchObject({ refreshToken: 'refresh-token' });
-  });
-
-  it('returns an unexpired token without refreshing it', async () => {
-    const authState: NotionAuthState = {
-      accessToken: 'access-token',
-      refreshToken: 'refresh-token',
-      tokenType: 'bearer',
-      expiresAt: '2026-05-18T19:00:00.000Z'
-    };
-    const fetcher = vi.fn();
-
-    await writeLocalStorageValue(storageKeys.notionAuthState, authState);
-
-    await expect(
-      getValidNotionAuthState({
-        config: testConfig,
-        fetcher,
-        now: () => new Date('2026-05-18T18:00:00.000Z')
-      })
-    ).resolves.toEqual(authState);
+    await expect(saveNotionPersonalAccessToken('   ', { config: testConfig, fetcher })).rejects.toThrow('notion-token-missing');
     expect(fetcher).not.toHaveBeenCalled();
-  });
 
-  it('refreshes expired tokens before Notion API calls and does not expose tokens through messages', async () => {
-    await writeLocalStorageValue(storageKeys.notionAuthState, expiredAuthState);
-
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            access_token: 'new-access-token',
-            token_type: 'bearer',
-            expires_in: 3600
-          }),
-          { status: 200 }
-        )
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
-
-    await notionApiFetch('https://api.notion.test/v1/pages', { method: 'GET' }, {
-      config: testConfig,
-      fetcher,
-      now: () => new Date('2026-05-18T18:00:00.000Z')
-    });
-
-    const apiCall = fetcher.mock.calls[1];
-    expect(apiCall[0]).toBe('https://api.notion.test/v1/pages');
-    expect((apiCall[1].headers as Headers).get('Authorization')).toBe('Bearer new-access-token');
-    expect((apiCall[1].headers as Headers).get('Notion-Version')).toBe(testConfig.notionVersion);
-    expect(chrome.storage.local.set).toHaveBeenCalledWith({
-      [storageKeys.notionAuthState]: {
-        accessToken: 'new-access-token',
-        refreshToken: 'refresh-token',
-        tokenType: 'bearer',
-        expiresAt: '2026-05-18T19:00:00.000Z'
-      }
-    });
-  });
-
-  it('clears Notion state on refresh failure while preserving Confluence configuration', async () => {
-    await writeLocalStorageValue(storageKeys.notionAuthState, expiredAuthState);
-    await writeLocalStorageValue(storageKeys.notionWorkspace, { workspaceId: 'workspace-1' });
-    await writeLocalStorageValue(storageKeys.notionDefaultTarget, {
-      type: 'page',
-      id: 'page-1',
-      displayName: 'Team Home'
-    });
-    await writeLocalStorageValue(storageKeys.confluenceBaseUrl, 'https://confluence.example.com/wiki');
-    await writeLocalStorageValue(storageKeys.lastTerminalClipTaskSummary, {
-      taskId: 'task-1',
-      status: 'succeeded',
-      warningCount: 0,
-      completedAt: '2026-05-18T17:00:00.000Z'
-    });
-
-    const fetcher = vi.fn(async () => new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 401 }));
-
-    await expect(
-      getValidNotionAuthState({
-        config: testConfig,
-        fetcher,
-        now: () => new Date('2026-05-18T18:00:00.000Z')
-      })
-    ).rejects.toThrow('token-refresh-failed:401');
-
+    await expect(saveNotionPersonalAccessToken('bad-token', { config: testConfig, fetcher })).rejects.toThrow('notion-token-validation-failed:401');
     expect(storage.get(storageKeys.notionAuthState)).toBeUndefined();
     expect(storage.get(storageKeys.notionWorkspace)).toBeUndefined();
-    expect(storage.get(storageKeys.notionDefaultTarget)).toBeUndefined();
-    expect(storage.get(storageKeys.lastTerminalClipTaskSummary)).toBeUndefined();
-    expect(storage.get(storageKeys.confluenceBaseUrl)).toBe('https://confluence.example.com/wiki');
   });
 
-  it('clears the same Notion state on logout while keeping Confluence configuration', async () => {
-    await writeLocalStorageValue(storageKeys.notionAuthState, expiredAuthState);
+  it('returns the stored token and injects Notion API headers', async () => {
+    await writeLocalStorageValue(storageKeys.notionAuthState, authState);
+    const fetcher = vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await expect(getValidNotionAuthState()).resolves.toEqual(authState);
+    await notionApiFetch('https://api.notion.test/v1/pages', { method: 'GET' }, { config: testConfig, fetcher });
+
+    const apiCall = fetcher.mock.calls[0];
+    expect(apiCall?.[0]).toBe('https://api.notion.test/v1/pages');
+    expect((apiCall?.[1]?.headers as Headers).get('Authorization')).toBe('Bearer secret_ntn_token');
+    expect((apiCall?.[1]?.headers as Headers).get('Notion-Version')).toBe(testConfig.notionVersion);
+  });
+
+  it('clears Notion state on logout while keeping Confluence configuration', async () => {
+    await writeLocalStorageValue(storageKeys.notionAuthState, authState);
     await writeLocalStorageValue(storageKeys.notionWorkspace, { workspaceId: 'workspace-1' });
     await writeLocalStorageValue(storageKeys.notionDefaultTarget, {
       type: 'database',
@@ -267,19 +148,18 @@ describe('Notion token refresh and API authorization', () => {
   });
 
   it('reports authorization status without returning raw tokens', async () => {
-    await writeLocalStorageValue(storageKeys.notionAuthState, expiredAuthState);
+    await writeLocalStorageValue(storageKeys.notionAuthState, authState);
     await writeLocalStorageValue(storageKeys.notionWorkspace, {
       workspaceId: 'workspace-1',
       workspaceName: 'Engineering'
     });
 
-    await expect(getNotionAuthorizationStatus({ now: () => new Date('2026-05-18T18:00:00.000Z') })).resolves.toEqual({
+    await expect(getNotionAuthorizationStatus()).resolves.toEqual({
       connected: true,
       workspace: {
         workspaceId: 'workspace-1',
         workspaceName: 'Engineering'
-      },
-      requiresReauthorization: false
+      }
     });
   });
 });

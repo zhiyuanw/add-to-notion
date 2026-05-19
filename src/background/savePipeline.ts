@@ -1,7 +1,7 @@
 import { extractConfluenceAssets, processConfluenceAssets, renderProcessedAssetsToNotionBlocks, type ProcessedConfluenceAsset } from '../assets';
 import { detectConfluencePage, fetchConfluencePageStorage, parseConfluenceStorageXml, type ConfluenceStorageDocument, type ConfluenceStorageElement, type ConfluenceStorageNode } from '../confluence';
 import { convertConfluenceStorageToNotionBlocks, type NotionBlock } from '../converter';
-import { notionOAuthConfig, type NotionAuthOptions, type NotionOAuthConfig, NotionWriterError, writeClippedNotionPage } from '../notion';
+import { type NotionApiConfig, type NotionAuthOptions, NotionWriterError, writeClippedNotionPage } from '../notion';
 import type { ClipTaskOperationContext, ClipTaskOperationResult } from './clipTaskRunner';
 import type { ClipTaskResult, ConfluencePageData, Degradation, NotionTarget } from '../shared/domain';
 import type { AssetKind } from '../shared/domain';
@@ -14,7 +14,7 @@ export interface SaveConfluencePageOperationOptions {
   domPageId?: string;
   bootstrapPageId?: string;
   fetcher?: RetriableFetchAttempt;
-  notionConfig?: NotionOAuthConfig;
+  notionConfig?: NotionApiConfig;
   now?: () => Date;
   debugLogger?: DebugLogger;
 }
@@ -54,7 +54,7 @@ export function createSaveConfluencePageOperation(
       }
 
       if (!(await readLocalStorageValue(storageKeys.notionAuthState))) {
-        return fail(options, 'notion-auth-missing', 'Connect Notion in Options before saving.', context, state);
+        return fail(options, 'notion-auth-missing', 'Configure a Notion integration token in Options before saving.', context, state);
       }
 
       await context.updateStatus('detecting', 'Detecting Confluence page');
@@ -253,7 +253,7 @@ function resolveUrl(value: string, baseUrl: string): string | undefined {
 
 function notionAuthOptions(options: SaveConfluencePageOperationOptions, deadlineMs: number, debugLogger: DebugLogger): NotionAuthOptions {
   return {
-    config: options.notionConfig ?? notionOAuthConfig,
+    config: options.notionConfig,
     fetcher: options.fetcher,
     now: options.now,
     deadlineMs,

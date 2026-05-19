@@ -5,13 +5,11 @@ import {
   type ConfluenceBaseUrlValidationError
 } from '../confluence';
 import {
-  NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR,
-  NOTION_OAUTH_CLIENT_ID_CONFIGURATION_MESSAGE,
   getNotionAuthorizationStatus,
   logoutNotion,
+  saveNotionPersonalAccessToken,
   searchNotionTargets,
   saveNotionTargetSelection,
-  startNotionOAuth,
   type NotionAuthOptions
 } from '../notion';
 import type { NotionTarget } from '../shared/domain/models';
@@ -33,7 +31,7 @@ type ConfluenceOptionsState = {
 type NotionOptionsState = {
   connected: boolean;
   workspaceName?: string;
-  requiresReauthorization: boolean;
+  tokenInputValue: string;
   selectedTarget?: NotionTarget;
   searchQuery: string;
   searchResults: NotionTarget[];
@@ -42,9 +40,7 @@ type NotionOptionsState = {
 };
 
 type OptionsPageDependencies = {
-  notion?: NotionAuthOptions & {
-    createState?: () => string;
-  };
+  notion?: NotionAuthOptions;
 };
 
 type ConfluenceOptionsElements = {
@@ -61,7 +57,9 @@ type ConfluenceOptionsElements = {
 type NotionOptionsElements = {
   root: HTMLElement;
   authorizationStatus: HTMLElement;
-  connectButton: HTMLButtonElement;
+  tokenForm: HTMLFormElement;
+  tokenInput: HTMLInputElement;
+  saveTokenButton: HTMLButtonElement;
   logoutButton: HTMLButtonElement;
   searchInput: HTMLInputElement;
   searchButton: HTMLButtonElement;
@@ -106,9 +104,14 @@ export function renderNotionOptions(root: HTMLElement, state: NotionOptionsState
   root.innerHTML = `
     <section aria-labelledby="notion-settings-title">
       <h2 id="notion-settings-title">Notion settings</h2>
-      <p>Authorization: <span id="notion-authorization-status">Not connected</span></p>
-      <button id="connect-notion" type="button">Connect Notion</button>
-      <button id="logout-notion" type="button">Logout Notion</button>
+      <p>Connection: <span id="notion-authorization-status">Not connected</span></p>
+      <form id="notion-token-form">
+        <label for="notion-token">Notion integration token</label>
+        <input id="notion-token" name="notionToken" type="password" autocomplete="off" placeholder="ntn_..." />
+        <button id="save-notion-token" type="submit">Save token</button>
+      </form>
+      <p>Create a Notion integration token, share your target page or database with it, then paste the token here.</p>
+      <button id="logout-notion" type="button">Clear Notion token</button>
       <div>
         <label for="notion-target-search">Search Notion targets</label>
         <input id="notion-target-search" type="search" />
@@ -137,7 +140,7 @@ export function updateConfluenceOptions(elements: ConfluenceOptionsElements, sta
 
 export function updateNotionOptions(elements: NotionOptionsElements, state: NotionOptionsState): void {
   elements.authorizationStatus.textContent = formatAuthorizationStatus(state);
-  elements.connectButton.disabled = state.connected && !state.requiresReauthorization;
+  elements.tokenInput.value = state.tokenInputValue;
   elements.logoutButton.disabled = !state.connected;
   elements.searchInput.value = state.searchQuery;
   elements.searchButton.disabled = !state.connected;
@@ -184,11 +187,12 @@ export async function mountOptionsPage(root: HTMLElement, dependencies: OptionsP
 }
 
 export async function mountNotionOptions(root: HTMLElement, dependencies: OptionsPageDependencies = {}): Promise<void> {
-  let state = await loadNotionOptionsState(dependencies.notion);
+  let state = await loadNotionOptionsState();
   const elements = renderNotionOptions(root, state);
 
-  elements.connectButton.addEventListener('click', () => {
-    void connectNotion(dependencies, async (nextState) => {
+  elements.tokenForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void saveNotionToken(elements, dependencies, async (nextState) => {
       state = nextState;
       await refreshNotionOptions(elements, state);
     });
@@ -245,16 +249,16 @@ async function loadConfluenceOptionsState(): Promise<ConfluenceOptionsState> {
   return state;
 }
 
-async function loadNotionOptionsState(options?: NotionAuthOptions): Promise<NotionOptionsState> {
+async function loadNotionOptionsState(): Promise<NotionOptionsState> {
   const [authorizationStatus, selectedTarget] = await Promise.all([
-    getNotionAuthorizationStatus(options),
+    getNotionAuthorizationStatus(),
     readLocalStorageValue(storageKeys.notionDefaultTarget)
   ]);
 
   return {
     connected: authorizationStatus.connected,
     workspaceName: authorizationStatus.workspace?.workspaceName,
-    requiresReauthorization: authorizationStatus.requiresReauthorization,
+    tokenInputValue: '',
     selectedTarget,
     searchQuery: '',
     searchResults: []
@@ -315,34 +319,34 @@ async function grantPermission(
   });
 }
 
-async function connectNotion(
+async function saveNotionToken(
+  elements: NotionOptionsElements,
   dependencies: OptionsPageDependencies,
   commit: (state: NotionOptionsState) => Promise<void>
 ): Promise<void> {
   try {
-    await startNotionOAuth(dependencies.notion);
+    await saveNotionPersonalAccessToken(elements.tokenInput.value, dependencies.notion);
   } catch (error) {
-    if (error instanceof Error && error.message === NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR) {
-      const state = await loadNotionOptionsState(dependencies.notion);
-      await commit({ ...state, statusMessage: NOTION_OAUTH_CLIENT_ID_CONFIGURATION_MESSAGE });
-      return;
-    }
-
-    throw error;
+    await commit({
+      ...(await loadNotionOptionsState()),
+      tokenInputValue: elements.tokenInput.value,
+      statusMessage: tokenSaveFailureMessage(error)
+    });
+    return;
   }
 
-  const state = await loadNotionOptionsState(dependencies.notion);
-  await commit({ ...state, statusMessage: 'Notion connected.' });
+  const state = await loadNotionOptionsState();
+  await commit({ ...state, statusMessage: 'Notion token saved.' });
 }
 
 async function logoutNotionOptions(commit: (state: NotionOptionsState) => void): Promise<void> {
   await logoutNotion();
   commit({
     connected: false,
-    requiresReauthorization: false,
+    tokenInputValue: '',
     searchQuery: '',
     searchResults: [],
-    statusMessage: 'Notion logged out.'
+    statusMessage: 'Notion token cleared.'
   });
 }
 
@@ -399,7 +403,9 @@ function getNotionOptionsElements(root: HTMLElement): NotionOptionsElements {
   return {
     root,
     authorizationStatus: getRequiredElement(root, '#notion-authorization-status', HTMLElement),
-    connectButton: getRequiredElement(root, '#connect-notion', HTMLButtonElement),
+    tokenForm: getRequiredElement(root, '#notion-token-form', HTMLFormElement),
+    tokenInput: getRequiredElement(root, '#notion-token', HTMLInputElement),
+    saveTokenButton: getRequiredElement(root, '#save-notion-token', HTMLButtonElement),
     logoutButton: getRequiredElement(root, '#logout-notion', HTMLButtonElement),
     searchInput: getRequiredElement(root, '#notion-target-search', HTMLInputElement),
     searchButton: getRequiredElement(root, '#search-notion-targets', HTMLButtonElement),
@@ -424,6 +430,23 @@ function getRequiredElement<ElementType extends HTMLElement>(
   return element as ElementType;
 }
 
+
+function tokenSaveFailureMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return 'Notion token was not saved.';
+  }
+
+  if (error.message === 'notion-token-missing') {
+    return 'Enter a Notion integration token.';
+  }
+
+  if (error.message.startsWith('notion-token-validation-failed:')) {
+    return 'Notion rejected this token. Check the token value and share the target page or database with the integration.';
+  }
+
+  return error.message;
+}
+
 function formatPermissionStatus(state: ConfluenceOptionsState): string {
   if (!state.savedBaseUrl) {
     return 'Not requested';
@@ -437,11 +460,7 @@ function formatAuthorizationStatus(state: NotionOptionsState): string {
     return 'Not connected';
   }
 
-  if (state.requiresReauthorization) {
-    return 'Reauthorization required';
-  }
-
-  return state.workspaceName ? `Connected to ${state.workspaceName}` : 'Connected';
+  return state.workspaceName ? `Connected to ${state.workspaceName}` : 'Connected with integration token';
 }
 
 function formatSelectedTarget(target?: NotionTarget): string {

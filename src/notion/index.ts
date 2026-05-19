@@ -1,6 +1,5 @@
 export * from './auth';
-export * from './oauth';
-export * from './oauthClientConfig';
+export * from './config';
 export * from './targets';
 export * from './writer';
 

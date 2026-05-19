@@ -21,4 +21,4 @@ Tests should cover at least:
 - Re-saving creates a new page every time.
 - Notion append batching limit of 100 blocks.
 - Duplicate save click while a task is running.
-- Logout and token storage boundaries.
+- Internal Integration Token storage boundaries, invalid-token handling, logout cleanup, and absence of OAuth/refresh-token flow.

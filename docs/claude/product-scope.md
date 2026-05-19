@@ -5,7 +5,7 @@ The V1 product is a Chrome Extension MV3 app that saves the currently open Confl
 ## In scope for V1
 
 - Manual, single-page clipping only.
-- Notion OAuth; no manually pasted integration token.
+- User-provided Notion Personal Access Token / Internal Integration Token; Notion OAuth is out of scope for V1.
 - One configured Confluence base URL with explicit optional host permission.
 - Both Notion database and page targets.
 - Fetch Confluence storage format through REST API, not DOM-to-Markdown as the main path.

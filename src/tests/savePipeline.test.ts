@@ -1,26 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createSaveConfluencePageOperation } from '../background/savePipeline';
-import type { NotionOAuthConfig } from '../notion';
-import { notionOAuthConfig } from '../notion';
+import type { NotionApiConfig } from '../notion';
+import { notionApiConfig } from '../notion';
 import { storageKeys, writeLocalStorageValue, type NotionAuthState } from '../shared/storage';
 
 const storage = new Map<string, unknown>();
 const startedAt = '2026-05-18T20:20:00.000Z';
 const now = new Date('2026-05-18T20:20:02.000Z');
 
-const testConfig: NotionOAuthConfig = {
-  ...notionOAuthConfig,
-  clientId: 'notion-client-id',
-  clientSecret: 'notion-client-secret',
-  tokenEndpoint: 'https://api.notion.test/v1/oauth/token'
+const testConfig: NotionApiConfig = {
+  ...notionApiConfig,
+  notionVersion: '2022-06-28'
 };
 
 const authState: NotionAuthState = {
   accessToken: 'access-token',
-  refreshToken: 'refresh-token',
   tokenType: 'bearer',
-  expiresAt: '2026-05-18T21:00:00.000Z'
 };
 
 function stubChrome(permissionGranted = true): void {

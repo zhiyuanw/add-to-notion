@@ -12,9 +12,7 @@ export type StorageKey = (typeof storageKeys)[StorageKeyName];
 
 export interface NotionAuthState {
   accessToken: string;
-  refreshToken: string;
   tokenType: 'bearer';
-  expiresAt: string;
 }
 
 export interface NotionWorkspaceInfo {

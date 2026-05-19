@@ -1,5 +1,6 @@
-import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { statSync } from 'node:fs';
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -7,25 +8,66 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const distDir = join(rootDir, 'dist');
-const notionOAuthClientId = process.env.NOTION_OAUTH_CLIENT_ID?.trim() ?? '';
 
 await rm(distDir, { recursive: true, force: true });
 await mkdir(distDir, { recursive: true });
 await cp(join(rootDir, 'public'), distDir, { recursive: true });
 
 await execFileAsync('npx', ['tsc', '-p', 'tsconfig.build.json'], { cwd: rootDir });
-await injectNotionOAuthClientId(join(distDir, 'notion', 'oauthClientConfig.js'));
-await rename(join(distDir, 'background', 'index.js'), join(distDir, 'background.js'));
-await rename(join(distDir, 'popup', 'index.js'), join(distDir, 'popup.js'));
-await rename(join(distDir, 'options', 'index.js'), join(distDir, 'options.js'));
-await rm(join(distDir, 'background'), { recursive: true, force: true });
-await rm(join(distDir, 'popup'), { recursive: true, force: true });
-await rm(join(distDir, 'options'), { recursive: true, force: true });
+await rewriteRelativeModuleSpecifiers(distDir);
 
-async function injectNotionOAuthClientId(configPath) {
-  const source = await readFile(configPath, 'utf8');
-  await writeFile(
-    configPath,
-    source.replace("const BUILD_TIME_NOTION_OAUTH_CLIENT_ID = '';", `const BUILD_TIME_NOTION_OAUTH_CLIENT_ID = ${JSON.stringify(notionOAuthClientId)};`)
-  );
+async function rewriteRelativeModuleSpecifiers(root) {
+  for (const filePath of await listJavaScriptFiles(root)) {
+    const source = await readFile(filePath, 'utf8');
+    const rewritten = source.replace(/(from\s+['"])(\.\.?\/[^'"]+)(['"])/g, (_match, prefix, specifier, suffix) => {
+      return `${prefix}${resolveModuleSpecifier(filePath, specifier)}${suffix}`;
+    });
+    await writeFile(filePath, rewritten);
+  }
+}
+
+async function listJavaScriptFiles(root) {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files = await Promise.all(entries.map(async (entry) => {
+    const entryPath = join(root, entry.name);
+
+    if (entry.isDirectory()) {
+      return listJavaScriptFiles(entryPath);
+    }
+
+    return entry.isFile() && extname(entry.name) === '.js' ? [entryPath] : [];
+  }));
+
+  return files.flat();
+}
+
+function resolveModuleSpecifier(importerPath, specifier) {
+  const targetPath = resolve(dirname(importerPath), specifier);
+  const resolvedPath = resolveJavaScriptModule(targetPath);
+  const relativePath = relative(dirname(importerPath), resolvedPath).split(sep).join('/');
+  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
+}
+
+function resolveJavaScriptModule(targetPath) {
+  const candidates = [
+    targetPath,
+    `${targetPath}.js`,
+    join(targetPath, 'index.js')
+  ];
+
+  for (const candidate of candidates) {
+    if (isFileSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`Could not resolve emitted module import: ${targetPath}`);
+}
+
+function isFileSync(path) {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
 }

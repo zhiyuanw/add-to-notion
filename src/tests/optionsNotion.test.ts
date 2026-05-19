@@ -3,31 +3,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mountOptionsPage } from '../options/index';
-import {
-  NOTION_OAUTH_CLIENT_ID_CONFIGURATION_MESSAGE,
-  notionOAuthConfig,
-  type NotionOAuthConfig
-} from '../notion';
+import { notionApiConfig, type NotionApiConfig } from '../notion';
 import { storageKeys, type NotionAuthState, type NotionWorkspaceInfo } from '../shared/storage';
 
 const storage = new Map<string, unknown>();
 let requestPermission: ReturnType<typeof vi.fn<[], Promise<boolean>>>;
 let containsPermission: ReturnType<typeof vi.fn<[], Promise<boolean>>>;
-let launchWebAuthFlow: ReturnType<typeof vi.fn<[], Promise<string>>>;
 let fetchMock: ReturnType<typeof vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>>;
 
-const testConfig: NotionOAuthConfig = {
-  ...notionOAuthConfig,
-  clientId: 'notion-client-id',
-  clientSecret: 'notion-client-secret',
-  tokenEndpoint: 'https://api.notion.test/v1/oauth/token'
+const testConfig: NotionApiConfig = {
+  ...notionApiConfig,
+  notionVersion: '2022-06-28'
 };
 
 const authState: NotionAuthState = {
-  accessToken: 'access-token',
-  refreshToken: 'refresh-token',
-  tokenType: 'bearer',
-  expiresAt: '2026-05-18T19:00:00.000Z'
+  accessToken: 'secret_ntn_token',
+  tokenType: 'bearer'
 };
 
 const workspace: NotionWorkspaceInfo = {
@@ -37,9 +28,7 @@ const workspace: NotionWorkspaceInfo = {
 };
 
 const notionOptions = {
-  config: testConfig,
-  createState: () => 'test-state',
-  now: () => new Date('2026-05-18T18:00:00.000Z')
+  config: testConfig
 };
 
 beforeEach(() => {
@@ -47,15 +36,10 @@ beforeEach(() => {
   storage.clear();
   requestPermission = vi.fn(async (): Promise<boolean> => true);
   containsPermission = vi.fn(async (): Promise<boolean> => true);
-  launchWebAuthFlow = vi.fn(async (): Promise<string> => 'https://extension.test/notion-oauth?code=oauth-code&state=test-state');
   fetchMock = vi.fn();
 
   vi.stubGlobal('fetch', fetchMock);
   vi.stubGlobal('chrome', {
-    identity: {
-      getRedirectURL: vi.fn((path: string) => `https://extension.test/${path}`),
-      launchWebAuthFlow
-    },
     storage: {
       local: {
         get: vi.fn(async (keys?: string | string[] | Record<string, unknown> | null) => {
@@ -95,39 +79,43 @@ beforeEach(() => {
 });
 
 describe('Notion options UI', () => {
-  it('shows authorization status and connects Notion through OAuth', async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          access_token: 'new-access-token',
-          refresh_token: 'new-refresh-token',
-          token_type: 'bearer',
-          expires_in: 3600,
-          workspace_id: 'workspace-1',
-          workspace_name: 'Engineering Workspace',
-          bot_id: 'bot-1'
-        }),
-        { status: 200 }
-      )
-    );
+  it('saves a Notion integration token after validation', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ object: 'user', id: 'bot-1', name: 'Engineering Workspace' }), { status: 200 }));
 
     await mountOptionsPage(getApp(), { notion: notionOptions });
 
     expect(getText('#notion-authorization-status')).toBe('Not connected');
 
-    getButton('#connect-notion').click();
+    getInput('#notion-token').value = ' secret_ntn_token ';
+    getButton('#save-notion-token').click();
     await flushPromises();
 
     expect(getText('#notion-authorization-status')).toBe('Connected to Engineering Workspace');
-    expect(getText('#notion-settings-status')).toBe('Notion connected.');
-    expect(storage.get(storageKeys.notionAuthState)).toEqual({
-      accessToken: 'new-access-token',
-      refreshToken: 'new-refresh-token',
-      tokenType: 'bearer',
-      expiresAt: '2026-05-18T19:00:00.000Z'
+    expect(getText('#notion-settings-status')).toBe('Notion token saved.');
+    expect(getInput('#notion-token').value).toBe('');
+    expect(storage.get(storageKeys.notionAuthState)).toEqual(authState);
+    expect(storage.get(storageKeys.notionWorkspace)).toEqual({
+      workspaceId: 'bot-1',
+      workspaceName: 'Engineering Workspace',
+      botId: 'bot-1'
     });
-    expect(storage.get(storageKeys.notionWorkspace)).toEqual(workspace);
-    expect(launchWebAuthFlow).toHaveBeenCalledOnce();
+  });
+
+  it('shows token setup guidance without storing invalid tokens', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 }));
+
+    await mountOptionsPage(getApp(), { notion: notionOptions });
+
+    getInput('#notion-token').value = 'bad-token';
+    getButton('#save-notion-token').click();
+    await flushPromises();
+
+    expect(getText('#notion-settings-status')).toBe(
+      'Notion rejected this token. Check the token value and share the target page or database with the integration.'
+    );
+    expect(getText('#notion-authorization-status')).toBe('Not connected');
+    expect(storage.has(storageKeys.notionAuthState)).toBe(false);
+    expect(storage.has(storageKeys.notionWorkspace)).toBe(false);
   });
 
   it('lists searchable page and database targets and saves a selected page target', async () => {
@@ -236,17 +224,6 @@ describe('Notion options UI', () => {
     expect(getText('#notion-target-guidance')).toBe(
       'No accessible Notion pages or databases found. Grant the integration access to a page or database in Notion, then search again.'
     );
-  });
-
-  it('shows clear setup guidance when the OAuth client ID is missing from the build', async () => {
-    await mountOptionsPage(getApp(), { notion: { ...notionOptions, config: { ...testConfig, clientId: '' } } });
-
-    getButton('#connect-notion').click();
-    await flushPromises();
-
-    expect(getText('#notion-settings-status')).toBe(NOTION_OAUTH_CLIENT_ID_CONFIGURATION_MESSAGE);
-    expect(getText('#notion-authorization-status')).toBe('Not connected');
-    expect(launchWebAuthFlow).not.toHaveBeenCalled();
   });
 
   it('logs out Notion while keeping Confluence configuration visible', async () => {

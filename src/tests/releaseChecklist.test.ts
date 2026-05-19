@@ -5,7 +5,7 @@ import { extractConfluenceAssets, processConfluenceAssets, renderProcessedAssets
 import { recoverInterruptedClipTaskOnStartup, startBackgroundClipTask } from '../background/clipTaskRunner';
 import { detectConfluencePage, fetchConfluencePageStorage, normalizeConfluenceBaseUrl, parseConfluenceStorageXml } from '../confluence';
 import { convertConfluenceStorageToNotionBlocks, type NotionBlock } from '../converter';
-import { createNotionPage, notionOAuthConfig, type NotionOAuthConfig, writeClippedNotionPage } from '../notion';
+import { createNotionPage, notionApiConfig, type NotionApiConfig, writeClippedNotionPage } from '../notion';
 import type { ClipTask, ConfluencePageData, NotionTarget } from '../shared/domain';
 import { clearNotionSessionState, readLocalStorageValue, storageKeys, writeLocalStorageValue, type NotionAuthState } from '../shared/storage';
 
@@ -15,18 +15,14 @@ const storage = new Map<string, unknown>();
 const startedAt = '2026-05-18T21:10:00.000Z';
 const now = new Date('2026-05-18T21:10:02.000Z');
 
-const testConfig: NotionOAuthConfig = {
-  ...notionOAuthConfig,
-  clientId: 'notion-client-id',
-  clientSecret: 'notion-client-secret',
-  tokenEndpoint: 'https://api.notion.test/v1/oauth/token'
+const testConfig: NotionApiConfig = {
+  ...notionApiConfig,
+  notionVersion: '2022-06-28'
 };
 
 const authState: NotionAuthState = {
   accessToken: 'access-token',
-  refreshToken: 'refresh-token',
-  tokenType: 'bearer',
-  expiresAt: '2026-05-18T22:00:00.000Z'
+  tokenType: 'bearer'
 };
 
 const pageData: ConfluencePageData = {
@@ -131,7 +127,8 @@ beforeEach(() => {
 
 describe('V1 release checklist verification', () => {
   it('declares only runtime permissions plus the MV3 optional host candidate envelope needed for release', () => {
-    expect(manifest.permissions).toEqual(expect.arrayContaining(['identity', 'storage', 'notifications', 'tabs', 'activeTab', 'scripting']));
+    expect(manifest.permissions).toEqual(expect.arrayContaining(['storage', 'notifications', 'tabs', 'activeTab', 'scripting']));
+    expect(manifest.permissions).not.toContain('identity');
     expect(manifest.permissions).not.toContain('cookies');
     expect('host_permissions' in manifest).toBe(false);
     expect(manifest.optional_host_permissions).toEqual(['http://*/*', 'https://*/*']);

@@ -4,16 +4,16 @@ import {
   readNotionAuthState,
   saveNotionAuthState,
   storageKeys,
+  writeLocalStorageValue,
   type NotionAuthState,
   type NotionWorkspaceInfo
 } from '../shared/storage';
 import { fetchWithTimeoutAndRetry, type RetriableFetchAttempt } from '../shared/request';
 import type { DebugLogger } from '../shared/debugLogger';
-import { assertConfiguredNotionOAuthClient, notionOAuthConfig, type NotionOAuthConfig } from './oauth';
-import { NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR } from './oauthClientConfig';
+import { notionApiConfig, type NotionApiConfig } from './config';
 
 export interface NotionAuthOptions {
-  config?: NotionOAuthConfig;
+  config?: NotionApiConfig;
   fetcher?: RetriableFetchAttempt;
   now?: () => Date;
   deadlineMs?: number;
@@ -23,14 +23,13 @@ export interface NotionAuthOptions {
 export interface NotionAuthorizationStatus {
   connected: boolean;
   workspace?: NotionWorkspaceInfo;
-  requiresReauthorization: boolean;
 }
 
-interface NotionRefreshTokenResponse {
-  access_token?: unknown;
-  refresh_token?: unknown;
-  token_type?: unknown;
-  expires_in?: unknown;
+interface NotionUserResponse {
+  object?: unknown;
+  id?: unknown;
+  name?: unknown;
+  bot?: unknown;
 }
 
 export class NotionAuthError extends Error {
@@ -40,68 +39,54 @@ export class NotionAuthError extends Error {
   }
 }
 
-export async function getValidNotionAuthState(options: NotionAuthOptions = {}): Promise<NotionAuthState> {
+export async function getValidNotionAuthState(): Promise<NotionAuthState> {
   const authState = await readNotionAuthState();
 
   if (!authState) {
     throw new NotionAuthError('notion-auth-missing');
   }
 
-  if (!isNotionAccessTokenExpired(authState, options.now?.() ?? new Date())) {
-    return authState;
-  }
-
-  try {
-    return await refreshNotionAccessToken(authState, options);
-  } catch (error) {
-    await clearNotionSessionState();
-    throw error;
-  }
+  return authState;
 }
 
-export async function refreshNotionAccessToken(
-  authState: NotionAuthState,
-  options: NotionAuthOptions = {}
-): Promise<NotionAuthState> {
-  const config = options.config ?? notionOAuthConfig;
-  assertConfiguredClient(config);
+export async function saveNotionPersonalAccessToken(token: string, options: NotionAuthOptions = {}): Promise<NotionWorkspaceInfo> {
+  const accessToken = normalizeNotionToken(token);
+  const workspace = await validateNotionPersonalAccessToken(accessToken, options);
 
-  if (!authState.refreshToken) {
-    throw new NotionAuthError('notion-refresh-token-missing');
-  }
+  await saveNotionAuthState({
+    accessToken,
+    tokenType: 'bearer'
+  });
+  await writeLocalStorageValue(storageKeys.notionWorkspace, workspace);
 
-  const response = await fetchWithTimeoutAndRetry(config.tokenEndpoint, {
+  return workspace;
+}
+
+export async function validateNotionPersonalAccessToken(token: string, options: NotionAuthOptions = {}): Promise<NotionWorkspaceInfo> {
+  const accessToken = normalizeNotionToken(token);
+  const response = await fetchWithTimeoutAndRetry('https://api.notion.com/v1/users/me', {
     fetcher: options.fetcher,
-    method: 'POST',
-    headers: buildTokenRefreshHeaders(config),
-    body: JSON.stringify(buildTokenRefreshBody(authState.refreshToken, config)),
+    method: 'GET',
+    headers: buildNotionApiHeaders(accessToken, options.config ?? notionApiConfig),
     deadlineMs: options.deadlineMs
   });
 
   if (!response.ok) {
-    throw new NotionAuthError(`token-refresh-failed:${response.status}`);
+    throw new NotionAuthError(`notion-token-validation-failed:${response.status}`);
   }
 
-  const refreshedAuthState = mapRefreshResponseToAuthState(
-    (await response.json()) as NotionRefreshTokenResponse,
-    authState,
-    options.now?.() ?? new Date()
-  );
-
-  await saveNotionAuthState(refreshedAuthState);
-  return refreshedAuthState;
+  return mapUserResponseToWorkspace((await response.json()) as NotionUserResponse);
 }
 
 export async function notionApiFetch(input: RequestInfo | URL, init: RequestInit = {}, options: NotionAuthOptions = {}): Promise<Response> {
-  const config = options.config ?? notionOAuthConfig;
-  const authState = await getValidNotionAuthState(options);
+  const config = options.config ?? notionApiConfig;
+  const authState = await getValidNotionAuthState();
   const headers = new Headers(init.headers);
 
-  headers.set('Authorization', `Bearer ${authState.accessToken}`);
-  headers.set('Notion-Version', config.notionVersion);
-
-  if (!headers.has('Accept')) {
-    headers.set('Accept', 'application/json');
+  for (const [key, value] of Object.entries(buildNotionApiHeaders(authState.accessToken, config))) {
+    if (!headers.has(key)) {
+      headers.set(key, value);
+    }
   }
 
   return fetchWithTimeoutAndRetry(input, { ...init, fetcher: options.fetcher, headers, deadlineMs: options.deadlineMs });
@@ -111,7 +96,7 @@ export async function logoutNotion(): Promise<void> {
   await clearNotionSessionState();
 }
 
-export async function getNotionAuthorizationStatus(options: Pick<NotionAuthOptions, 'now'> = {}): Promise<NotionAuthorizationStatus> {
+export async function getNotionAuthorizationStatus(): Promise<NotionAuthorizationStatus> {
   const [authState, workspace] = await Promise.all([
     readNotionAuthState(),
     readLocalStorageValue(storageKeys.notionWorkspace)
@@ -119,73 +104,42 @@ export async function getNotionAuthorizationStatus(options: Pick<NotionAuthOptio
 
   return {
     connected: Boolean(authState),
-    workspace,
-    requiresReauthorization: Boolean(authState && isNotionAccessTokenExpired(authState, options.now?.() ?? new Date()) && !authState.refreshToken)
+    workspace
   };
 }
 
-export function isNotionAccessTokenExpired(authState: Pick<NotionAuthState, 'expiresAt'>, now: Date = new Date()): boolean {
-  const expiresAt = Date.parse(authState.expiresAt);
-  return !Number.isFinite(expiresAt) || expiresAt <= now.getTime();
-}
+function normalizeNotionToken(token: string): string {
+  const normalized = token.trim();
 
-function assertConfiguredClient(config: NotionOAuthConfig): void {
-  try {
-    assertConfiguredNotionOAuthClient(config);
-  } catch (error) {
-    if (error instanceof Error && error.message === NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR) {
-      throw new NotionAuthError(NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR);
-    }
-
-    throw error;
+  if (!normalized) {
+    throw new NotionAuthError('notion-token-missing');
   }
+
+  return normalized;
 }
 
-function buildTokenRefreshHeaders(config: NotionOAuthConfig): HeadersInit {
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-    'Notion-Version': config.notionVersion
+function buildNotionApiHeaders(accessToken: string, config: NotionApiConfig): Record<string, string> {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    'Notion-Version': config.notionVersion,
+    Accept: 'application/json'
   };
-
-  if (config.clientSecret) {
-    headers.Authorization = `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`;
-  }
-
-  return headers;
 }
 
-function buildTokenRefreshBody(refreshToken: string, config: NotionOAuthConfig): Record<string, string> {
-  const body: Record<string, string> = {
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken
-  };
-
-  if (!config.clientSecret) {
-    body.client_id = config.clientId;
+function mapUserResponseToWorkspace(response: NotionUserResponse): NotionWorkspaceInfo {
+  if (response.object !== 'user') {
+    throw new NotionAuthError('invalid-notion-user-response');
   }
 
-  return body;
-}
-
-function mapRefreshResponseToAuthState(
-  response: NotionRefreshTokenResponse,
-  previousAuthState: NotionAuthState,
-  now: Date
-): NotionAuthState {
-  const accessToken = requireString(response.access_token, 'missing-access-token');
-  const tokenType = requireString(response.token_type, 'missing-token-type').toLowerCase();
-  const expiresIn = requireNumber(response.expires_in, 'missing-expires-in');
-
-  if (tokenType !== 'bearer') {
-    throw new NotionAuthError('unsupported-token-type');
-  }
+  const workspaceId = requireString(response.id, 'missing-notion-user-id');
+  const bot = isRecord(response.bot) ? response.bot : undefined;
 
   return {
-    accessToken,
-    refreshToken: optionalString(response.refresh_token) ?? previousAuthState.refreshToken,
-    tokenType,
-    expiresAt: new Date(now.getTime() + expiresIn * 1000).toISOString()
+    workspaceId,
+    workspaceName: optionalString(response.name) ?? optionalString(bot?.workspace_name) ?? 'Notion integration',
+    workspaceIcon: optionalString(bot?.workspace_icon),
+    botId: workspaceId,
+    ownerUserId: isRecord(bot?.owner) && isRecord(bot.owner.user) ? optionalString(bot.owner.user.id) : undefined
   };
 }
 
@@ -197,14 +151,10 @@ function requireString(value: unknown, error: string): string {
   return value;
 }
 
-function requireNumber(value: unknown, error: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    throw new NotionAuthError(error);
-  }
-
-  return value;
-}
-
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

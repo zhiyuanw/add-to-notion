@@ -2,27 +2,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   NotionTargetError,
-  notionOAuthConfig,
+  notionApiConfig,
   saveNotionTargetSelection,
   searchNotionTargets,
-  type NotionOAuthConfig
+  type NotionApiConfig
 } from '../notion';
 import { storageKeys, writeLocalStorageValue, type NotionAuthState } from '../shared/storage';
 
 const storage = new Map<string, unknown>();
 
-const testConfig: NotionOAuthConfig = {
-  ...notionOAuthConfig,
-  clientId: 'notion-client-id',
-  clientSecret: 'notion-client-secret',
-  tokenEndpoint: 'https://api.notion.test/v1/oauth/token'
+const testConfig: NotionApiConfig = {
+  ...notionApiConfig,
+  notionVersion: '2022-06-28'
 };
 
 const authState: NotionAuthState = {
   accessToken: 'access-token',
-  refreshToken: 'refresh-token',
   tokenType: 'bearer',
-  expiresAt: '2026-05-18T19:00:00.000Z'
 };
 
 beforeEach(() => {

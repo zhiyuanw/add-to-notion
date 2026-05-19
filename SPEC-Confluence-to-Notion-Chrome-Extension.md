@@ -32,7 +32,7 @@ V1 目标不是通用 web clipper，也不是企业级 Confluence-to-Notion 迁�
 
 V1 MUST 支持：
 
-- 用户通过 Notion OAuth 授权，不需要手动粘贴 integration token。
+- 用户在 Options UI 中配置 Notion Personal Access Token / Internal Integration Token；V1 不支持 Notion OAuth。
 - 用户配置一个自己的 Confluence Server / Data Center 7.13.7 base URL，并显式授予对应 host permission。
 - 用户选择默认 Notion 保存目标：database 或 page；两种 target 都是 V1 MUST 支持。
 - 用户在 Confluence 页面手动点击保存。
@@ -69,7 +69,7 @@ V1 MUST NOT 做：
 
 ```text
 安装扩展
-  -> Notion OAuth 授权
+  -> 配置 Notion Internal Integration Token
   -> 配置 Confluence base URL
   -> 授予 host permission
   -> 选择 Notion database/page 目标
@@ -98,7 +98,7 @@ flowchart TD
 | Component | Responsibility |
 | --- | --- |
 | Popup UI | 展示当前页面状态、目标、保存按钮、任务进度和结果摘要。 |
-| Options UI | 配置 Notion OAuth、Confluence base URL、host permission、默认保存目标。 |
+| Options UI | 配置 Notion Internal Integration Token、Confluence base URL、host permission、默认保存目标。 |
 | Background Task Runner | 执行保存任务，维护进度、warning、失败状态；popup 关闭后继续运行。 |
 | Confluence Detector | 判断当前 tab 是否为已配置 Confluence 实例内的支持页面，并解析 page identity。 |
 | Confluence Storage Fetcher | 用浏览器会话 cookie 拉取 storage XML、metadata、attachments。 |
@@ -112,10 +112,10 @@ flowchart TD
 
 | Dependency | Use | Failure impact |
 | --- | --- | --- |
-| Chrome Extension MV3 APIs | OAuth redirect、storage、permissions、notifications、tabs、service worker | 失败则无法授权、保存或展示任务结果。 |
+| Chrome Extension MV3 APIs | token storage、permissions、notifications、tabs、service worker | 失败则无法授权、保存或展示任务结果。 |
 | Confluence Server / Data Center REST API | 读取页面 storage format、metadata、attachments | 拉取失败则整页保存失败。 |
 | Browser session cookie | 访问内网 Confluence 内容 | cookie 失效或无权限则整页保存失败。 |
-| Notion OAuth/API | 创建页面、写入 blocks、上传文件 | 认证或写入失败则整页保存失败。 |
+| Notion API + Internal Integration Token | 创建页面、写入 blocks、上传文件 | 认证或写入失败则整页保存失败。 |
 | Notion File Upload API | 上传内网图片和 Draw.io 渲染图 | 单个文件失败只产生 warning。 |
 
 ## 5. 核心领域模型
@@ -157,20 +157,16 @@ flowchart TD
 
 ## 6. 配置和权限合同
 
-### 6.1 Notion OAuth
+### 6.1 Notion Personal Access Token / Internal Integration Token
 
-- V1 MUST 使用 Notion OAuth。
-- V1 MUST request only the minimum OAuth scopes required by the Notion API version used by implementation for target discovery/search, page creation, database child page creation, block append, and file upload.
-- V1 MUST NOT request scopes whose only purpose is database schema/property management, workspace administration, user management, or other capabilities outside this SPEC.
-- Required OAuth scopes MUST be verified against Notion's current OAuth documentation during implementation and recorded in extension configuration or release notes.
+- V1 MUST 使用用户提供的 Notion Personal Access Token / Internal Integration Token。
+- V1 MUST NOT 实现 Notion OAuth、OAuth client ID、OAuth redirect URI、OAuth scopes、authorization code exchange、access token refresh 或 refresh token storage。
 - The SPEC does not fix a specific `Notion-Version`; implementation MUST choose a Notion API version according to current Notion documentation at implementation time and record it in extension configuration or release notes.
-- 本地开发和分发 MAY 使用同一个 Notion OAuth app。
-- OAuth access token 和 refresh token MUST 存在 `chrome.storage.local`。
-- Token MUST NOT 存在 `chrome.storage.sync`。
+- Notion token MUST 存在 `chrome.storage.local`。
+- Notion token MUST NOT 存在 `chrome.storage.sync`。
 - Content script MUST NOT 接收 Notion token。
-- Background service worker MUST 持有并使用 Notion token。
-- Token 过期时，扩展 MUST 尝试 refresh。
-- Refresh 失败时，扩展 MUST 清理本地 token 状态，并要求用户重新授权。
+- Background service worker MUST 是唯一附加 Notion `Authorization` header 的扩展上下文。
+- Token 缺失、无效、被撤销或无权访问选定 target 时，扩展 MUST fail early，并提示用户更新 token 或在 Notion 中 share 目标 page/database 给该 integration。
 - Logout MUST 清理本地 Notion token、当前 workspace 信息、默认 target 和最近一次 terminal `ClipTask` 结果摘要。
 - Logout MUST NOT 清理 Confluence base URL 或主动移除已授予的 Confluence host permission。
 
@@ -196,9 +192,9 @@ flowchart TD
 ### 6.3 Notion 保存目标
 
 - 用户 MUST 选择默认 `NotionTarget` 后才能保存。
-- Options UI MUST list searchable page and database targets accessible to the OAuth integration; requesting the minimum Notion search/list capability needed for this discovery is acceptable in V1.
+- Options UI MUST list searchable page and database targets accessible to the configured Notion integration token.
 - Options UI MUST NOT 展示扩展无权访问的 Notion page 或 database。
-- 目标列表为空时，Options UI MUST 提示用户在 Notion 中把目标 page 或 database 授权给该 OAuth integration。
+- 目标列表为空时，Options UI MUST 提示用户在 Notion 中把目标 page 或 database share 给对应 integration，或检查 token 是否有效。
 - 选择 target 时，扩展 MUST 验证 target type 为 `database` 或 `page`，并保存 `id`、`type` 和 `displayName`。
 - 选择 database target 时，扩展 MUST 读取 database metadata，并保存 title property name / id。
 - Target type MUST 为 `database` 或 `page`；V1 MUST 同时支持两种类型。
@@ -441,10 +437,9 @@ Converter MUST 直接生成 Notion blocks。Markdown MUST NOT 作为主中间格
 
 | Failure class | Example | Required behavior | Human action |
 | --- | --- | --- | --- |
-| Excessive Notion OAuth scopes | OAuth app requests schema/admin/user-management scopes outside this SPEC | Block release until scopes are reduced or justified | 更新 OAuth app 配置。 |
-| Missing Notion OAuth | 用户未授权或 token 被清理 | Fail early | 重新授权 Notion。 |
-| Notion token refresh failed | refresh token 失效 | 清理 token，fail early | 重新授权 Notion。 |
-| Notion target list empty | OAuth workspace has no accessible page/database | Fail target setup with guidance to grant access in Notion | 用户在 Notion 授权目标页面或数据库。 |
+| Missing Notion token | 用户未配置 token 或 logout 后 token 被清理 | Fail early | 在 Options UI 配置 Notion Internal Integration Token。 |
+| Invalid/revoked Notion token | Notion API returns unauthorized | 清理或标记本地 token 状态，fail early | 重新生成并配置 token。 |
+| Notion target list empty | Configured integration has no accessible page/database | Fail target setup with guidance to grant access in Notion | 用户在 Notion 中把目标 page/database share 给该 integration。 |
 | Missing target | 未选择 database/page | Fail early | 选择保存目标。 |
 | Invalid/stale Notion database target | Saved database title property, schema, or target permission is no longer valid | Fail page creation with target-invalid message; do not proactively re-read metadata on every save | 重新选择保存目标。 |
 | Invalid Confluence base URL | URL has query/hash/credentials or unsupported scheme | Fail setup with validation message | 输入有效的 Confluence base URL。 |
@@ -479,7 +474,7 @@ Converter MUST 直接生成 Notion blocks。Markdown MUST NOT 作为主中间格
 - 扩展 MUST NOT 请求 `cookies` permission。
 - 扩展 MUST NOT 执行 Confluence 页面中的脚本、HTML event handler、SVG script 或宏内容。
 - Parser MUST 禁用 XML external entity 和外部资源加载。
-- Error logs MUST NOT 记录 access token、refresh token、cookie、完整 Notion API authorization header。
+- Error logs MUST NOT 记录 Notion token、cookie、完整 Notion API authorization header。
 - V1 MUST NOT provide debug export.
 - 开发模式 debug log MUST 默认脱敏 token、cookie、authorization header。
 - 用户 logout MUST 清除 Notion token、workspace 状态、默认 target 和最近一次 terminal task 摘要。
@@ -577,7 +572,7 @@ Required fixtures：
 | Security | Host permission path guard | Host permission is origin-scoped; detector and REST content fetcher reject URLs outside normalized base URL path; same-origin referenced assets may be fetched. |
 | Security | Debug export absence | No debug export is available in V1; development logs redact secrets. |
 | Security | Unsupported raw HTML | Recoverable text is preserved as plain text or degradation; raw executable/renderable HTML is not emitted. |
-| Security | Notion OAuth scopes | OAuth app requests only minimum scopes needed for target discovery/search, page/database child creation, block append, and file upload; no schema/admin/user-management scopes. |
+| Security | No Notion OAuth flow | Extension has no OAuth client ID, redirect URI, scope request, authorization-code exchange, or refresh-token handling. |
 | Security | XML with external entity | Entity is not resolved; no external request happens. |
 | Security | Token exposure check | Content script receives no Notion token. |
 
@@ -600,9 +595,9 @@ Run against at least one real Confluence Server / Data Center 7.13.7 instance:
 
 ### 16.1 Required
 
-- [ ] Notion OAuth works with configured OAuth app.
-- [ ] Notion OAuth app requests only minimum scopes needed for target discovery/search, page/database child creation, block append, and file upload.
-- [ ] Notion OAuth app does not request schema/admin/user-management scopes outside this SPEC.
+- [ ] User can configure a Notion Personal Access Token / Internal Integration Token in Options UI.
+- [ ] Extension does not include Notion OAuth client ID, redirect URI, scope request, authorization-code exchange, or refresh-token flow.
+- [ ] User can search and select a Notion page or database shared with the configured integration.
 - [ ] User can search and select an accessible Notion page or database target.
 - [ ] Selecting a database target reads and stores its title property name / id.
 - [ ] Stale database title property, schema, or permission failures show target-invalid guidance.

@@ -51,8 +51,7 @@ describe('processConfluenceAssets', () => {
       notionFileRef: {
         fileUploadId: 'upload-1',
         filename: 'image.png',
-        expiresAt: '2026-05-18T19:00:00.000Z'
-      }
+            }
     });
     expect(result.degradations).toEqual([]);
   });
