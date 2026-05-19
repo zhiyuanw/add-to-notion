@@ -6,6 +6,7 @@ Started: 2026年 5月19日 星期二 12时11分47秒 CST
 - Release checklist coverage is centralized in `src/tests/releaseChecklist.test.ts` and can import `public/manifest.json` directly.
 - Build-time extension config can live in a small source module with an empty default and be injected into `dist` by `scripts/build-extension.mjs`.
 - Popup-to-background save messages are the handoff point for tab-local content-script data; inject content helpers only after checking the configured base URL.
+- Asset-producing conversion should emit `asset_placeholder` blocks and let the save pipeline replace them after upload, preserving document order.
 
 ## 2026-05-19 12:14 - US-001
 - Implemented MV3 manifest permissions required for Notion OAuth and runtime Confluence host access.
@@ -36,4 +37,13 @@ Started: 2026年 5月19日 星期二 12时11分47秒 CST
   - Display URL detection needs tab-local content-script data before popup support checks and before background save task creation.
   - Content-script responses should remain minimal identity-only payloads; Notion auth stays in extension storage/background-owned flows.
   - Content-script build entries need explicit inclusion in `tsconfig.build.json` and on-demand injection needs `scripting` manifest coverage in the release checklist.
+---
+
+## 2026-05-19 13:03 - US-004
+- Implemented in-place asset rendering by emitting converter `asset_placeholder` blocks for Confluence images and Draw.io previews, then replacing them in the save pipeline after upload or degradation.
+- Added save pipeline acceptance coverage for interleaved uploaded images, failed upload fallback links in place, warning count, and no per-image callouts.
+- Files changed: `src/converter/index.ts`, `src/assets/index.ts`, `src/background/savePipeline.ts`, `src/tests/savePipeline.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Asset rendering order belongs to the converted block stream; avoid appending rendered assets after conversion.
+  - Asset upload tests should route mocked fetch responses by URL because uploads run concurrently.
 ---

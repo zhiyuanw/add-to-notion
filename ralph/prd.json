@@ -70,8 +70,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added asset placeholders during conversion and save-pipeline replacement so uploaded or degraded asset blocks render at original document positions."
     },
     {
       "id": "US-005",

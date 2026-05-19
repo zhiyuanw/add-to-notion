@@ -1,9 +1,10 @@
-import { extractConfluenceAssets, processConfluenceAssets, renderProcessedAssetsToNotionBlocks } from '../assets';
+import { extractConfluenceAssets, processConfluenceAssets, renderProcessedAssetsToNotionBlocks, type ProcessedConfluenceAsset } from '../assets';
 import { detectConfluencePage, fetchConfluencePageStorage, parseConfluenceStorageXml, type ConfluenceStorageDocument, type ConfluenceStorageElement, type ConfluenceStorageNode } from '../confluence';
 import { convertConfluenceStorageToNotionBlocks, type NotionBlock } from '../converter';
 import { notionOAuthConfig, type NotionAuthOptions, type NotionOAuthConfig, NotionWriterError, writeClippedNotionPage } from '../notion';
 import type { ClipTaskOperationContext, ClipTaskOperationResult } from './clipTaskRunner';
 import type { ClipTaskResult, ConfluencePageData, Degradation, NotionTarget } from '../shared/domain';
+import type { AssetKind } from '../shared/domain';
 import { createDebugLogger, type DebugLogger } from '../shared/debugLogger';
 import { readConfluenceBaseUrl, readLocalStorageValue, storageKeys } from '../shared/storage';
 import type { RetriableFetchAttempt } from '../shared/request';
@@ -108,11 +109,10 @@ export function createSaveConfluencePageOperation(
       logger.stageStart('uploading_assets');
       const authOptions = notionAuthOptions(options, context.deadlineMs, logger);
       const processedAssets = await processConfluenceAssets(extractedAssets, authOptions);
-      const renderedAssets = renderProcessedAssetsToNotionBlocks(processedAssets.assets);
       state.warnings.push(...processedAssets.degradations);
       logger.stageEnd('uploading_assets');
 
-      const contentBlocks = [...converted.blocks, ...renderedAssets.blocks] as NotionBlock[];
+      const contentBlocks = replaceAssetPlaceholders(converted.blocks, processedAssets.assets, fetched.pageData.pageRef.baseUrl);
       state.blockCount = contentBlocks.length;
 
       await context.updateStatus('writing', 'Writing Notion page');
@@ -148,6 +148,82 @@ export function createSaveConfluencePageOperation(
       return fail(options, 'clip-save-failed', error instanceof Error ? error.message : 'Save failed.', context, state);
     }
   };
+}
+
+function replaceAssetPlaceholders(blocks: NotionBlock[], assets: ProcessedConfluenceAsset[], baseUrl: string): NotionBlock[] {
+  const assetsByKey = new Map(assets.map((asset) => [assetKey(asset.kind, asset.sourceUrl), asset]));
+  const replacedBlocks: NotionBlock[] = [];
+
+  for (const block of blocks) {
+    if (block.type === 'asset_placeholder') {
+      const resolvedSourceUrl = resolveUrl(block.asset_placeholder.sourceUrl, baseUrl);
+      const asset = resolvedSourceUrl ? assetsByKey.get(assetKey(block.asset_placeholder.kind, resolvedSourceUrl)) : undefined;
+      if (asset) {
+        replacedBlocks.push(...renderProcessedAssetsToNotionBlocks([asset]).blocks);
+      }
+      continue;
+    }
+
+    if (block.type === 'bulleted_list_item' && block.bulleted_list_item.children) {
+      replacedBlocks.push({
+        ...block,
+        bulleted_list_item: {
+          ...block.bulleted_list_item,
+          children: replaceAssetPlaceholders(block.bulleted_list_item.children, assets, baseUrl)
+        }
+      });
+      continue;
+    }
+
+    if (block.type === 'numbered_list_item' && block.numbered_list_item.children) {
+      replacedBlocks.push({
+        ...block,
+        numbered_list_item: {
+          ...block.numbered_list_item,
+          children: replaceAssetPlaceholders(block.numbered_list_item.children, assets, baseUrl)
+        }
+      });
+      continue;
+    }
+
+    if (block.type === 'toggle' && block.toggle.children) {
+      replacedBlocks.push({
+        ...block,
+        toggle: {
+          ...block.toggle,
+          children: replaceAssetPlaceholders(block.toggle.children, assets, baseUrl)
+        }
+      });
+      continue;
+    }
+
+    if (block.type === 'callout' && block.callout.children) {
+      replacedBlocks.push({
+        ...block,
+        callout: {
+          ...block.callout,
+          children: replaceAssetPlaceholders(block.callout.children, assets, baseUrl)
+        }
+      });
+      continue;
+    }
+
+    replacedBlocks.push(block);
+  }
+
+  return replacedBlocks;
+}
+
+function assetKey(kind: AssetKind, sourceUrl: string): string {
+  return `${kind}:${sourceUrl}`;
+}
+
+function resolveUrl(value: string, baseUrl: string): string | undefined {
+  try {
+    return new URL(value, baseUrl).href;
+  } catch {
+    return undefined;
+  }
 }
 
 function notionAuthOptions(options: SaveConfluencePageOperationOptions, deadlineMs: number, debugLogger: DebugLogger): NotionAuthOptions {

@@ -31,7 +31,10 @@ export type NotionBlock =
   | NotionTableRowBlock
   | NotionCodeBlock
   | NotionCalloutBlock
-  | NotionToggleBlock;
+  | NotionToggleBlock
+  | NotionFileUploadBlock
+  | NotionExternalImageBlock
+  | NotionAssetPlaceholderBlock;
 
 export interface NotionParagraphBlock {
   object: 'block';
@@ -113,6 +116,43 @@ export interface NotionToggleBlock {
   };
 }
 
+export interface NotionFileUploadBlock {
+  object: 'block';
+  type: 'image' | 'file' | 'video' | 'audio' | 'pdf';
+  image?: NotionFileUploadPayload;
+  file?: NotionFileUploadPayload;
+  video?: NotionFileUploadPayload;
+  audio?: NotionFileUploadPayload;
+  pdf?: NotionFileUploadPayload;
+}
+
+export interface NotionExternalImageBlock {
+  object: 'block';
+  type: 'image';
+  image: {
+    type: 'external';
+    external: {
+      url: string;
+    };
+  };
+}
+
+export interface NotionFileUploadPayload {
+  type: 'file_upload';
+  file_upload: {
+    id: string;
+  };
+}
+
+export interface NotionAssetPlaceholderBlock {
+  object: 'block';
+  type: 'asset_placeholder';
+  asset_placeholder: {
+    sourceUrl: string;
+    kind: 'image' | 'drawio';
+  };
+}
+
 export interface ConfluenceToNotionConversionOptions {
   acceptedCodeLanguages?: ReadonlySet<string>;
 }
@@ -183,6 +223,11 @@ function convertBlockNodes(
     blocks.push(...flushParagraph(textBuffer));
     textBuffer = [];
 
+    if (isAssetPlaceholderElement(node)) {
+      blocks.push(createAssetPlaceholderBlock(node));
+      continue;
+    }
+
     if (isMacro(node)) {
       blocks.push(convertMacro(node, degradations, acceptedCodeLanguages));
       continue;
@@ -194,7 +239,7 @@ function convertBlockNodes(
     }
 
     if (node.localName === 'p') {
-      blocks.push(...flushParagraph(node.children));
+      blocks.push(...convertParagraphNode(node, degradations, acceptedCodeLanguages));
       continue;
     }
 
@@ -213,6 +258,18 @@ function convertBlockNodes(
 
   blocks.push(...flushParagraph(textBuffer));
   return blocks;
+}
+
+function convertParagraphNode(
+  node: ConfluenceStorageElement,
+  degradations: Degradation[],
+  acceptedCodeLanguages: ReadonlySet<string>
+): NotionBlock[] {
+  if (!node.children.some((child) => child.type === 'element' && isAssetPlaceholderElement(child))) {
+    return flushParagraph(node.children);
+  }
+
+  return convertBlockNodes(node.children, degradations, acceptedCodeLanguages);
 }
 
 function flushParagraph(nodes: ConfluenceStorageNode[]): NotionParagraphBlock[] {
@@ -468,6 +525,10 @@ function convertInlineNode(node: ConfluenceStorageNode, context: InlineContext):
     return node.text.length > 0 ? [createTextRichText(node.text, context)] : [];
   }
 
+  if (isAssetPlaceholderElement(node)) {
+    return [];
+  }
+
   const nextContext = contextForElement(node, context);
 
   if (node.localName === 'br') {
@@ -532,6 +593,34 @@ function cleanAnnotations(annotations: NotionTextAnnotations): NotionTextAnnotat
   return clean;
 }
 
+function createAssetPlaceholderBlock(node: ConfluenceStorageElement): NotionAssetPlaceholderBlock {
+  return {
+    object: 'block',
+    type: 'asset_placeholder',
+    asset_placeholder: {
+      sourceUrl: assetPlaceholderSourceUrl(node) ?? '',
+      kind: isDrawioMacro(node) ? 'drawio' : 'image'
+    }
+  };
+}
+
+function assetPlaceholderSourceUrl(node: ConfluenceStorageElement): string | undefined {
+  if (node.namespacePrefix === 'ac' && node.localName === 'image') {
+    const resource = elementChildren(node).find((child) => child.namespacePrefix === 'ri' && (child.localName === 'url' || child.localName === 'attachment'));
+    return resource ? resourceUrl(resource) : undefined;
+  }
+
+  return firstMacroParameter(node, ['previewUrl', 'renderUrl', 'imageUrl', 'url']);
+}
+
+function isAssetPlaceholderElement(node: ConfluenceStorageElement): boolean {
+  return (node.namespacePrefix === 'ac' && node.localName === 'image') || isDrawioMacro(node);
+}
+
+function isDrawioMacro(node: ConfluenceStorageElement): boolean {
+  return isMacro(node) && macroNameFor(node) === 'drawio';
+}
+
 function isMacro(node: ConfluenceStorageElement): boolean {
   return node.namespacePrefix === 'ac' && node.localName === 'structured-macro';
 }
@@ -542,6 +631,23 @@ function isHeading(node: ConfluenceStorageElement): boolean {
 
 function isInlineElement(node: ConfluenceStorageElement): boolean {
   return new Set(['a', 'strong', 'b', 'em', 'i', 's', 'strike', 'del', 'code', 'span', 'br']).has(node.localName);
+}
+
+function firstMacroParameter(node: ConfluenceStorageElement, names: string[]): string | undefined {
+  for (const name of names) {
+    const value = macroParameter(node, name);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function resourceUrl(resource: ConfluenceStorageElement): string | undefined {
+  if (resource.localName === 'url') {
+    return attributeValue(resource, 'value') ?? attributeValue(resource, 'url');
+  }
+  return attributeValue(resource, 'filename');
 }
 
 function elementChildren(node: ConfluenceStorageElement): ConfluenceStorageElement[] {

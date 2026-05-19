@@ -1,3 +1,4 @@
+import type { NotionExternalImageBlock, NotionFileUploadBlock, NotionFileUploadPayload } from '../converter';
 import type { ConfluenceStorageDocument, ConfluenceStorageElement, ConfluenceStorageNode } from '../confluence/storageParser';
 import { normalizeConfluenceBaseUrl } from '../confluence/baseUrl';
 import { notionApiFetch, type NotionAuthOptions } from '../notion/auth';
@@ -29,31 +30,7 @@ export interface ConfluenceAssetProcessingResult {
   degradations: Degradation[];
 }
 
-export type NotionAssetBlock =
-  | NotionAssetFileUploadBlock
-  | NotionAssetExternalImageBlock
-  | NotionAssetParagraphBlock;
-
-export interface NotionAssetFileUploadBlock {
-  object: 'block';
-  type: 'image' | 'file' | 'video' | 'audio' | 'pdf';
-  image?: NotionFileUploadPayload;
-  file?: NotionFileUploadPayload;
-  video?: NotionFileUploadPayload;
-  audio?: NotionFileUploadPayload;
-  pdf?: NotionFileUploadPayload;
-}
-
-export interface NotionAssetExternalImageBlock {
-  object: 'block';
-  type: 'image';
-  image: {
-    type: 'external';
-    external: {
-      url: string;
-    };
-  };
-}
+export type NotionAssetBlock = NotionFileUploadBlock | NotionExternalImageBlock | NotionAssetParagraphBlock;
 
 export interface NotionAssetParagraphBlock {
   object: 'block';
@@ -69,13 +46,6 @@ export interface NotionAssetParagraphBlock {
       };
       annotations: Record<string, never>;
     }>;
-  };
-}
-
-export interface NotionFileUploadPayload {
-  type: 'file_upload';
-  file_upload: {
-    id: string;
   };
 }
 
@@ -198,7 +168,7 @@ function renderProcessedAssetToNotionBlocks(asset: ProcessedConfluenceAsset): No
   return [createLinkParagraph(asset.filename ?? filenameFromUrl(externalUrl) ?? externalUrl, externalUrl)];
 }
 
-function createFileUploadBlock(kind: AssetKind, fileUploadId: string): NotionAssetFileUploadBlock {
+function createFileUploadBlock(kind: AssetKind, fileUploadId: string): NotionFileUploadBlock {
   const blockType = kind === 'drawio' ? 'image' : kind;
   if (blockType === 'image') {
     return { object: 'block', type: 'image', image: createFileUploadPayload(fileUploadId) };
@@ -224,7 +194,7 @@ function createFileUploadPayload(fileUploadId: string): NotionFileUploadPayload 
   };
 }
 
-function createExternalImageBlock(url: string): NotionAssetExternalImageBlock {
+function createExternalImageBlock(url: string): NotionExternalImageBlock {
   return {
     object: 'block',
     type: 'image',

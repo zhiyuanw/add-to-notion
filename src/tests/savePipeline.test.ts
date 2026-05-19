@@ -86,6 +86,25 @@ function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status });
 }
 
+function textResponse(payload: string, status = 200, contentType = 'text/plain'): Response {
+  return new Response(payload, { status, headers: { 'content-type': contentType } });
+}
+
+function richTextContent(block: Record<string, any>): string {
+  if (block.type === 'paragraph') {
+    return block.paragraph.rich_text.map((item: { text: { content: string } }) => item.text.content).join('');
+  }
+  if (block.type === 'toggle') {
+    return block.toggle.rich_text.map((item: { text: { content: string } }) => item.text.content).join('');
+  }
+  return block.type;
+}
+
+function appendBodyFor(fetcher: { mock: { calls: unknown[][] } }, pageId: string): { children: Array<Record<string, any>> } {
+  const appendCall = fetcher.mock.calls.find((call) => call[0] === `https://api.notion.com/v1/blocks/${pageId}/children`);
+  return JSON.parse(String((appendCall?.[1] as RequestInit | undefined)?.body));
+}
+
 beforeEach(() => {
   storage.clear();
   stubChrome();
@@ -142,6 +161,118 @@ describe('Confluence to Notion save pipeline', () => {
       }
     });
     expect(result.warnings?.map((warning) => warning.type)).toEqual(['complex-table-flattened', 'asset-cross-origin']);
+  });
+
+
+  it('writes uploaded image blocks at their original paragraph positions instead of appending them', async () => {
+    await seedConfiguredState();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/rest/api/content/123')) {
+        return jsonResponse({
+          title: 'Interleaved Images',
+          body: {
+            storage: {
+              value:
+                '<p>Before</p><ac:image><ri:url ri:value="/confluence/download/attachments/123/first.png" /></ac:image><p>Between</p><ac:image><ri:url ri:value="/confluence/download/attachments/123/second.png" /></ac:image><p>After</p>'
+            }
+          },
+          metadata: { labels: { results: [] } },
+          children: { attachment: { results: [] } }
+        });
+      }
+      if (url.includes('/download/attachments/123/')) {
+        return textResponse('image-bytes', 200, 'image/png');
+      }
+      if (url === 'https://api.notion.com/v1/file_uploads') {
+        const body = JSON.parse(String(init?.body));
+        const suffix = body.filename === 'first.png' ? 'first' : 'second';
+        return jsonResponse({ id: `upload-${suffix}`, upload_url: `https://uploads.notion.test/${suffix}` });
+      }
+      if (url.startsWith('https://uploads.notion.test/')) {
+        return textResponse('', 200);
+      }
+      if (url.endsWith('/complete')) {
+        const id = url.includes('upload-first') ? 'upload-first' : 'upload-second';
+        return jsonResponse({ id });
+      }
+      if (url === 'https://api.notion.com/v1/pages') {
+        return jsonResponse({ id: 'notion-page-1', url: 'https://notion.so/notion-page-1' });
+      }
+      if (url === 'https://api.notion.com/v1/blocks/notion-page-1/children') {
+        return jsonResponse({ object: 'list' });
+      }
+      return jsonResponse({});
+    });
+
+    const result = await createSaveConfluencePageOperation({
+      pageUrl: 'https://wiki.example.com/confluence/pages/viewpage.action?pageId=123',
+      fetcher,
+      notionConfig: testConfig,
+      now: () => now
+    })(makeContext());
+
+    expect(result).toMatchObject({ status: 'succeeded', result: { blockCount: 6, assetCount: 2, warningCount: 0 } });
+    const appendBody = appendBodyFor(fetcher, 'notion-page-1');
+    expect(appendBody.children.map((block: Record<string, any>) => (block.type === 'image' ? block.image.file_upload.id : richTextContent(block)))).toEqual([
+      'Confluence metadata',
+      'Before',
+      'upload-first',
+      'Between',
+      'upload-second',
+      'After'
+    ]);
+  });
+
+  it('keeps failed image upload fallback links at original positions without per-image callouts', async () => {
+    await seedConfiguredState();
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/rest/api/content/123')) {
+        return jsonResponse({
+          title: 'Failed Image',
+          body: {
+            storage: {
+              value: '<p>Before</p><ac:image><ri:url ri:value="/confluence/download/attachments/123/broken.png" /></ac:image><p>After</p>'
+            }
+          },
+          metadata: { labels: { results: [] } },
+          children: { attachment: { results: [] } }
+        });
+      }
+      if (url.includes('/download/attachments/123/')) {
+        return textResponse('image-bytes', 200, 'image/png');
+      }
+      if (url === 'https://api.notion.com/v1/file_uploads') {
+        return new Response(JSON.stringify({ object: 'error' }), { status: 500 });
+      }
+      if (url === 'https://api.notion.com/v1/pages') {
+        return jsonResponse({ id: 'notion-page-1', url: 'https://notion.so/notion-page-1' });
+      }
+      if (url === 'https://api.notion.com/v1/blocks/notion-page-1/children') {
+        return jsonResponse({ object: 'list' });
+      }
+      return jsonResponse({});
+    });
+
+    const result = await createSaveConfluencePageOperation({
+      pageUrl: 'https://wiki.example.com/confluence/pages/viewpage.action?pageId=123',
+      fetcher,
+      notionConfig: testConfig,
+      now: () => now
+    })(makeContext());
+
+    expect(result).toMatchObject({ status: 'succeeded', result: { blockCount: 4, assetCount: 1, warningCount: 1 } });
+    expect(result.warnings?.map((warning) => warning.type)).toEqual(['asset-upload-failed']);
+    const appendBody = appendBodyFor(fetcher, 'notion-page-1');
+    expect(appendBody.children.map((block: Record<string, any>) => richTextContent(block))).toEqual([
+      'Confluence metadata',
+      'Before',
+      'broken.png',
+      'After'
+    ]);
+    expect(appendBody.children[2].paragraph.rich_text[0].text.link.url).toBe('https://wiki.example.com/confluence/download/attachments/123/broken.png');
+    expect(JSON.stringify(appendBody.children)).not.toContain('callout');
   });
 
   it('fails early when required configuration is missing', async () => {
