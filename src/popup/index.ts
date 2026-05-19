@@ -202,7 +202,11 @@ function renderResultSummary(element: HTMLElement, summary: TerminalClipTaskSumm
     return;
   }
 
-  const prefix = summary.status === 'succeeded' ? 'Success: created a new Notion page.' : `Failed: ${summary.failureReason ?? 'Save failed.'}`;
+  const prefix = summary.partial
+    ? `Partial failure: a Notion page may have been created. ${summary.failureReason ?? 'Open the partial page, inspect it, and delete it manually if needed.'}`
+    : summary.status === 'succeeded'
+      ? 'Success: created a new Notion page.'
+      : `Failed: ${summary.failureReason ?? 'Save failed.'}`;
   element.append(document.createTextNode(`${prefix} Warnings: ${summary.warningCount}.`));
 
   if (summary.notionPageUrl) {

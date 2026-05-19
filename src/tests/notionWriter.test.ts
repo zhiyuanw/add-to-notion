@@ -393,6 +393,8 @@ describe('Notion page writer', () => {
     ).rejects.toMatchObject({
       name: 'NotionWriterError',
       message: 'notion-block-append-failed:500',
+      partialWrite: true,
+      guidance: 'A Notion page was created before the save failed. Open the partial page, inspect it, and delete it manually if needed.',
       pageId: 'page-1',
       pageUrl: 'https://notion.so/page-1'
     });

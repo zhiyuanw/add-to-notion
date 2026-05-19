@@ -399,10 +399,14 @@ describe('Confluence to Notion save pipeline', () => {
     expect(result).toMatchObject({
       status: 'failed',
       sourceTitle: 'Partial Write',
-      failure: { code: 'notion-write-failed' },
+      failure: {
+        code: 'notion-write-failed',
+        message: 'A Notion page was created before the save failed. Open the partial page, inspect it, and delete it manually if needed.'
+      },
       result: {
         notionPageId: 'partial-page-1',
         notionPageUrl: 'https://notion.so/partial-page-1',
+        partial: true,
         blockCount: 1,
         assetCount: 0,
         warningCount: 0,

@@ -32,18 +32,23 @@ export class NotionWriterError extends Error {
   guidance?: string;
   pageId?: string;
   pageUrl?: string;
+  partialWrite?: boolean;
 
-  constructor(message: string, guidance?: string, partialPage?: CreateNotionPageResult) {
+  constructor(message: string, guidance?: string, partialPage?: CreateNotionPageResult, partialWrite = false) {
     super(message);
     this.name = 'NotionWriterError';
     this.guidance = guidance;
     this.pageId = partialPage?.pageId;
     this.pageUrl = partialPage?.pageUrl;
+    this.partialWrite = partialWrite;
   }
 }
 
 export const notionTargetInvalidGuidance =
   'The selected Notion target is unavailable or its title property changed. Re-select the target in Options.';
+
+export const notionPartialWriteGuidance =
+  'A Notion page was created before the save failed. Open the partial page, inspect it, and delete it manually if needed.';
 
 export async function createNotionPage(
   request: CreateNotionPageRequest,
@@ -100,7 +105,7 @@ export async function writeClippedNotionPage(
     options.debugLogger?.notionWriteBatchSummary({ batchIndex: index + 1, batchCount: batches.length, blockCount: batch.length, status: response.status });
 
     if (!response.ok) {
-      throw new NotionWriterError(`notion-block-append-failed:${response.status}`, undefined, createdPage);
+      throw new NotionWriterError(`notion-block-append-failed:${response.status}`, notionPartialWriteGuidance, createdPage, true);
     }
   }
 

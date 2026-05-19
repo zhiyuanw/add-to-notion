@@ -223,6 +223,51 @@ describe('background ClipTask runner', () => {
     });
   });
 
+  it('persists partial write details and guidance in terminal failure summaries', async () => {
+    const operation = vi.fn(async () => ({
+      status: 'failed' as const,
+      sourceTitle: 'Roadmap',
+      sourceUrl: 'https://confluence.example.com/wiki/pages/viewpage.action?pageId=123',
+      failure: {
+        code: 'notion-write-failed',
+        message: 'A Notion page was created before the save failed. Open the partial page, inspect it, and delete it manually if needed.'
+      },
+      result: {
+        notionPageId: 'partial-page-1',
+        notionPageUrl: 'https://notion.example/partial-page-1',
+        partial: true,
+        blockCount: 1,
+        assetCount: 0,
+        warningCount: 0,
+        elapsedMs: 100
+      },
+      warnings: []
+    }));
+
+    await startBackgroundClipTask({ now: () => startedAt, createTaskId: () => 'task-partial', operation });
+
+    await vi.waitFor(() => {
+      expect(storage.get(storageKeys.activeClipTaskLock)).toBeUndefined();
+      expect(storage.get(storageKeys.lastTerminalClipTaskSummary)).toMatchObject({
+        taskId: 'task-partial',
+        status: 'failed',
+        sourceTitle: 'Roadmap',
+        sourceUrl: 'https://confluence.example.com/wiki/pages/viewpage.action?pageId=123',
+        notionPageUrl: 'https://notion.example/partial-page-1',
+        warningCount: 0,
+        failureReason: 'A Notion page was created before the save failed. Open the partial page, inspect it, and delete it manually if needed.',
+        partial: true
+      });
+    });
+    expect(showClipTaskCompletionFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'task-partial',
+        status: 'failed',
+        result: expect.objectContaining({ partial: true, notionPageUrl: 'https://notion.example/partial-page-1' })
+      })
+    );
+  });
+
   it('updates persisted state transitions while a task is running', async () => {
     storage.set(storageKeys.activeClipTaskLock, makeTask({ taskId: 'task-progress', status: 'detecting' }));
 

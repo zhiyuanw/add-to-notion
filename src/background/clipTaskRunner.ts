@@ -72,6 +72,7 @@ function buildTerminalSummary(task: ClipTask, completedAt: string): TerminalClip
     sourceUrl: task.pageRef?.pageUrl,
     target: task.target,
     notionPageUrl: task.result?.notionPageUrl,
+    partial: task.result?.partial,
     warningCount: task.result?.warningCount ?? task.warnings.length,
     failureReason: task.failure?.message,
     completedAt

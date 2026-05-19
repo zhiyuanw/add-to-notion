@@ -8,6 +8,7 @@ Started: 2026年 5月19日 星期二 12时11分47秒 CST
 - Popup-to-background save messages are the handoff point for tab-local content-script data; inject content helpers only after checking the configured base URL.
 - Asset-producing conversion should emit `asset_placeholder` blocks and let the save pipeline replace them after upload, preserving document order.
 - Notion file upload expiry validation belongs in asset processing and should compare `expiresAt` to attach-time `now`, not a one-hour lookahead window.
+- Partial Notion writes should be represented on `ClipTaskResult.partial` and propagated into terminal summaries for Popup rendering.
 
 ## 2026-05-19 12:14 - US-001
 - Implemented MV3 manifest permissions required for Notion OAuth and runtime Confluence host access.
@@ -56,4 +57,15 @@ Started: 2026年 5月19日 星期二 12时11分47秒 CST
 - **Learnings for future iterations:**
   - File upload attachability is decided at the asset processing boundary using the provided `now` clock.
   - Expired uploads should remain recoverable as original Confluence source links and warning degradations, not Notion file upload blocks.
+---
+
+## 2026-05-19 13:15 - US-006
+- Implemented explicit partial write handling for Notion append failures after page creation.
+- Propagated partial page URL, partial marker, and manual cleanup guidance through save pipeline results, terminal summaries, and Popup rendering.
+- Added automated coverage for writer partial errors, save pipeline partial summaries, background terminal summaries, Popup partial rendering, and no cleanup attempt.
+- Files changed: `src/notion/writer.ts`, `src/background/savePipeline.ts`, `src/background/clipTaskRunner.ts`, `src/popup/index.ts`, `src/shared/domain/clipTask.ts`, `src/tests/notionWriter.test.ts`, `src/tests/savePipeline.test.ts`, `src/tests/backgroundClipTaskRunner.test.ts`, `src/tests/popupSave.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Partial write state should originate from `NotionWriterError.partialWrite` and be carried on `ClipTaskResult.partial` rather than inferred from failed status alone.
+  - Popup terminal summaries should use `TerminalClipTaskSummary.partial` to distinguish partial writes from ordinary failures.
+  - No browser MCP was available in this session, so manual browser verification is still needed for the Popup rendering acceptance item.
 ---

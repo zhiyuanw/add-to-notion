@@ -40,6 +40,7 @@ export interface ClipTaskFailure {
 export interface ClipTaskResult {
   notionPageId?: string;
   notionPageUrl?: string;
+  partial?: boolean;
   blockCount: number;
   assetCount: number;
   warningCount: number;
@@ -67,6 +68,7 @@ export interface TerminalClipTaskSummary {
   sourceUrl?: string;
   target?: NotionTarget;
   notionPageUrl?: string;
+  partial?: boolean;
   warningCount: number;
   failureReason?: string;
   completedAt: string;

@@ -106,8 +106,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added partial write propagation from Notion append failures through save summaries and Popup rendering, preserving the partial page URL and manual cleanup guidance."
     },
     {
       "id": "US-007",

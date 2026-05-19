@@ -27,6 +27,7 @@ interface PipelineState {
   assetCount: number;
   notionPageId?: string;
   notionPageUrl?: string;
+  partial?: boolean;
 }
 
 export function createSaveConfluencePageOperation(
@@ -142,6 +143,7 @@ export function createSaveConfluencePageOperation(
       if (error instanceof NotionWriterError) {
         state.notionPageId = error.pageId;
         state.notionPageUrl = error.pageUrl;
+        state.partial = error.partialWrite;
         return fail(options, 'notion-write-failed', error.guidance ?? error.message, context, state);
       }
 
@@ -258,6 +260,7 @@ function buildResult(context: ClipTaskOperationContext, state: PipelineState, op
   return {
     notionPageId: state.notionPageId,
     notionPageUrl: state.notionPageUrl,
+    partial: state.partial,
     blockCount: state.blockCount,
     assetCount: state.assetCount,
     warningCount: state.warnings.length,

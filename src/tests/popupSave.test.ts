@@ -195,6 +195,29 @@ describe('popup save UI', () => {
     expect(getElement<HTMLAnchorElement>('#popup-result-summary a', HTMLAnchorElement).href).toBe('https://notion.example/roadmap');
   });
 
+  it('shows terminal partial write failure summary with the partial page link', async () => {
+    seedConfiguredPage();
+    storage.set(storageKeys.lastTerminalClipTaskSummary, {
+      taskId: 'task-partial',
+      status: 'failed',
+      completedAt: '2026-05-18T20:50:00.000Z',
+      sourceTitle: 'Roadmap',
+      sourceUrl: pageUrl,
+      target,
+      notionPageUrl: 'https://notion.example/partial-roadmap',
+      warningCount: 0,
+      partial: true,
+      failureReason: 'A Notion page was created before the save failed. Open the partial page, inspect it, and delete it manually if needed.'
+    });
+
+    await mountPopupPage(getApp());
+    await flushPromises();
+
+    expect(getText('#popup-result-summary')).toContain('Partial failure: a Notion page may have been created.');
+    expect(getText('#popup-result-summary')).toContain('Open the partial page, inspect it, and delete it manually if needed.');
+    expect(getElement<HTMLAnchorElement>('#popup-result-summary a', HTMLAnchorElement).href).toBe('https://notion.example/partial-roadmap');
+  });
+
   it('shows terminal failure summary with warning count', async () => {
     seedConfiguredPage();
     storage.set(storageKeys.lastTerminalClipTaskSummary, {
