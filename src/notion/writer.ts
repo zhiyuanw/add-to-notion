@@ -45,7 +45,7 @@ export class NotionWriterError extends Error {
 }
 
 export const notionTargetInvalidGuidance =
-  'The selected Notion target is unavailable or its title property changed. Re-select the target in Options.';
+  'The selected Notion target is unavailable, missing write access, or its title property changed. Re-select the target in Options and check the Notion connection capabilities.';
 
 export const notionPartialWriteGuidance =
   'A Notion page was created before the save failed. Open the partial page, inspect it, and delete it manually if needed.';
@@ -65,7 +65,7 @@ export async function createNotionPage(
 
   if (!response.ok) {
     if (isTargetInvalidStatus(response.status)) {
-      throw new NotionWriterError('target-invalid', notionTargetInvalidGuidance);
+      throw new NotionWriterError('target-invalid', await targetInvalidGuidance(response));
     }
 
     throw new NotionWriterError(`notion-page-create-failed:${response.status}`);
@@ -113,6 +113,24 @@ export async function writeClippedNotionPage(
     ...createdPage,
     appendedBlockCount: blocks.length
   };
+}
+
+async function targetInvalidGuidance(response: Response): Promise<string> {
+  const message = await readNotionErrorMessage(response);
+  return message ? `${notionTargetInvalidGuidance} Notion: ${message}` : notionTargetInvalidGuidance;
+}
+
+async function readNotionErrorMessage(response: Response): Promise<string | undefined> {
+  try {
+    const payload = await response.clone().json();
+    if (payload && typeof payload === 'object' && 'message' in payload && typeof payload.message === 'string' && payload.message.trim().length > 0) {
+      return payload.message.trim();
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
 }
 
 function buildCreatePageBody(request: CreateNotionPageRequest): Record<string, unknown> {

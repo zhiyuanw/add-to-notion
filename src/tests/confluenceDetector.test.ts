@@ -74,11 +74,56 @@ describe('Confluence page detection', () => {
     });
   });
 
-  it('rejects display URLs when no metadata pageId is available', async () => {
+  it('detects display URLs by resolving pageId from Confluence REST when metadata is unavailable', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const url = new URL(String(input));
+      expect(url.href).toBe('https://confluence.example.com/wiki/rest/api/content?spaceKey=ENG&title=Project+Plan&type=page&limit=1');
+      return new Response(JSON.stringify({ results: [{ id: '97531' }] }), { status: 200 });
+    });
+
     await expect(
       detectConfluencePage({
         baseUrl: 'https://confluence.example.com/wiki',
-        pageUrl: 'https://confluence.example.com/wiki/display/ENG/Project+Plan'
+        pageUrl: 'https://confluence.example.com/wiki/display/ENG/Project+Plan',
+        fetcher
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      pageRef: {
+        baseUrl: 'https://confluence.example.com/wiki',
+        pageId: '97531'
+      }
+    });
+  });
+
+  it('decodes display URL space and title before resolving pageId from Confluence REST', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const url = new URL(String(input));
+      expect(url.searchParams.get('spaceKey')).toBe('SD PT');
+      expect(url.searchParams.get('title')).toBe('Confluence upload-md fence sample');
+      return new Response(JSON.stringify({ results: [{ id: '86420' }] }), { status: 200 });
+    });
+
+    await expect(
+      detectConfluencePage({
+        baseUrl: 'https://confluence.example.com',
+        pageUrl: 'https://confluence.example.com/display/SD+PT/Confluence+upload-md+fence+sample',
+        fetcher
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      pageRef: {
+        pageId: '86420'
+      }
+    });
+  });
+
+  it('rejects display URLs when no metadata pageId is available and REST cannot resolve it', async () => {
+    await expect(
+      detectConfluencePage({
+        baseUrl: 'https://confluence.example.com/wiki',
+        pageUrl: 'https://confluence.example.com/wiki/display/ENG/Project+Plan',
+        displayPageIdResolver: async () => ''
       })
     ).resolves.toEqual({ ok: false, reason: 'missing-page-id' });
   });

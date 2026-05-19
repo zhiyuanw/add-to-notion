@@ -118,6 +118,30 @@ describe('Notion personal access token authorization', () => {
     expect(apiCall?.[0]).toBe('https://api.notion.test/v1/pages');
     expect((apiCall?.[1]?.headers as Headers).get('Authorization')).toBe('Bearer secret_ntn_token');
     expect((apiCall?.[1]?.headers as Headers).get('Notion-Version')).toBe(testConfig.notionVersion);
+    expect((apiCall?.[1]?.headers as Headers).get('Content-Type')).toBeNull();
+  });
+
+  it('sends JSON content type for Notion API requests with bodies', async () => {
+    await writeLocalStorageValue(storageKeys.notionAuthState, authState);
+    const fetcher = vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await notionApiFetch('https://api.notion.test/v1/pages', { method: 'POST', body: JSON.stringify({ parent: { database_id: 'database-1' } }) }, { config: testConfig, fetcher });
+
+    const headers = fetcher.mock.calls[0]?.[1]?.headers as Headers;
+    expect(headers.get('Content-Type')).toBe('application/json');
+  });
+
+  it('preserves browser-generated multipart content type for FormData Notion requests', async () => {
+    await writeLocalStorageValue(storageKeys.notionAuthState, authState);
+    const fetcher = vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const formData = new FormData();
+    formData.append('file', new Blob(['content']), 'asset.png');
+
+    await notionApiFetch('https://api.notion.test/v1/file_uploads/upload-1/send', { method: 'POST', body: formData }, { config: testConfig, fetcher });
+
+    const headers = fetcher.mock.calls[0]?.[1]?.headers as Headers;
+    expect(headers.get('Authorization')).toBe('Bearer secret_ntn_token');
+    expect(headers.get('Content-Type')).toBeNull();
   });
 
   it('clears Notion state on logout while keeping Confluence configuration', async () => {

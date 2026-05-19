@@ -130,7 +130,8 @@ describe('V1 release checklist verification', () => {
     expect(manifest.permissions).toEqual(expect.arrayContaining(['storage', 'notifications', 'tabs', 'activeTab', 'scripting']));
     expect(manifest.permissions).not.toContain('identity');
     expect(manifest.permissions).not.toContain('cookies');
-    expect('host_permissions' in manifest).toBe(false);
+    expect(manifest.host_permissions).toEqual(['https://api.notion.com/*']);
+    expect(manifest.host_permissions).not.toContain('<all_urls>');
     expect(manifest.optional_host_permissions).toEqual(['http://*/*', 'https://*/*']);
     expect(manifest.optional_host_permissions).not.toContain('<all_urls>');
   });
@@ -254,7 +255,6 @@ describe('V1 release checklist verification', () => {
           await new Promise<void>((resolve) => releaseUpload.push(resolve));
           activeUploads -= 1;
         }),
-        completeFileUpload: vi.fn(async (fileUploadId: string) => ({ fileUploadId, expiresAt: '2026-05-18T22:00:00.000Z' })),
         now: () => now
       }
     );

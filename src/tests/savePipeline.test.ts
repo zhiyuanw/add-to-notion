@@ -188,10 +188,6 @@ describe('Confluence to Notion save pipeline', () => {
       if (url.startsWith('https://uploads.notion.test/')) {
         return textResponse('', 200);
       }
-      if (url.endsWith('/complete')) {
-        const id = url.includes('upload-first') ? 'upload-first' : 'upload-second';
-        return jsonResponse({ id });
-      }
       if (url === 'https://api.notion.com/v1/pages') {
         return jsonResponse({ id: 'notion-page-1', url: 'https://notion.so/notion-page-1' });
       }
@@ -258,9 +254,6 @@ describe('Confluence to Notion save pipeline', () => {
       }
       if (url === 'https://uploads.notion.test/diagram') {
         return textResponse('', 200);
-      }
-      if (url.endsWith('/complete')) {
-        return jsonResponse({ id: 'upload-diagram' });
       }
       if (url === 'https://api.notion.com/v1/pages') {
         return jsonResponse({ id: 'notion-page-1', url: 'https://notion.so/notion-page-1' });
@@ -338,59 +331,6 @@ describe('Confluence to Notion save pipeline', () => {
     ]);
     expect(appendBody.children[2].paragraph.rich_text[0].text.link.url).toBe('https://wiki.example.com/confluence/download/attachments/123/broken.png');
     expect(JSON.stringify(appendBody.children)).not.toContain('callout');
-  });
-
-  it('validates uploaded asset expiry during final rendering before writing Notion blocks', async () => {
-    await seedConfiguredState();
-    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('/rest/api/content/123')) {
-        return jsonResponse({
-          title: 'Expired Upload',
-          body: { storage: { value: '<p>Before</p><ac:image><ri:url ri:value="/confluence/download/attachments/123/expired.png" /></ac:image><p>After</p>' } },
-          metadata: { labels: { results: [] } },
-          children: { attachment: { results: [] } }
-        });
-      }
-      if (url.includes('/download/attachments/123/')) {
-        return textResponse('image-bytes', 200, 'image/png');
-      }
-      if (url === 'https://api.notion.com/v1/file_uploads') {
-        return jsonResponse({ id: 'upload-expired', upload_url: 'https://uploads.notion.test/expired' });
-      }
-      if (url === 'https://uploads.notion.test/expired') {
-        return textResponse('', 200);
-      }
-      if (url === 'https://api.notion.com/v1/file_uploads/upload-expired/complete') {
-        return jsonResponse({ id: 'upload-expired', expires_at: now.toISOString() });
-      }
-      if (url === 'https://api.notion.com/v1/pages') {
-        return jsonResponse({ id: 'notion-page-1', url: 'https://notion.so/notion-page-1' });
-      }
-      if (url === 'https://api.notion.com/v1/blocks/notion-page-1/children') {
-        expect(JSON.stringify(init?.body)).not.toContain('file_upload');
-        return jsonResponse({ object: 'list' });
-      }
-      return jsonResponse({});
-    });
-
-    const result = await createSaveConfluencePageOperation({
-      pageUrl: 'https://wiki.example.com/confluence/pages/viewpage.action?pageId=123',
-      fetcher,
-      notionConfig: testConfig,
-      now: () => now
-    })(makeContext());
-
-    expect(result).toMatchObject({ status: 'succeeded', result: { blockCount: 4, assetCount: 1, warningCount: 1 } });
-    expect(result.warnings?.map((warning) => warning.type)).toEqual(['asset-attach-window-expired']);
-    const appendBody = appendBodyFor(fetcher, 'notion-page-1');
-    expect(appendBody.children.map((block: Record<string, any>) => richTextContent(block))).toEqual([
-      'Confluence metadata',
-      'Before',
-      'expired.png',
-      'After'
-    ]);
-    expect(appendBody.children[2].paragraph.rich_text[0].text.link.url).toBe('https://wiki.example.com/confluence/download/attachments/123/expired.png');
   });
 
   it('fails early when required configuration is missing', async () => {

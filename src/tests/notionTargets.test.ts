@@ -18,7 +18,7 @@ const testConfig: NotionApiConfig = {
 
 const authState: NotionAuthState = {
   accessToken: 'access-token',
-  tokenType: 'bearer',
+  tokenType: 'bearer'
 };
 
 beforeEach(() => {
@@ -78,8 +78,8 @@ describe('Notion target discovery and selection', () => {
               }
             },
             {
-              object: 'database',
-              id: 'database-1',
+              object: 'data_source',
+              id: 'data-source-1',
               title: [{ plain_text: 'Engineering Docs' }]
             },
             {
@@ -102,7 +102,7 @@ describe('Notion target discovery and selection', () => {
     ).resolves.toEqual({
       targets: [
         { type: 'page', id: 'page-1', displayName: 'Team Home' },
-        { type: 'database', id: 'database-1', displayName: 'Engineering Docs' }
+        { type: 'database', id: 'data-source-1', displayName: 'Engineering Docs', parentObject: 'data_source' }
       ]
     });
 
@@ -127,7 +127,8 @@ describe('Notion target discovery and selection', () => {
       })
     ).resolves.toEqual({
       targets: [],
-      guidance: 'No accessible Notion pages or databases found. Grant the integration access to a page or database in Notion, then search again.'
+      guidance:
+        'No accessible Notion pages or databases found. Check that this personal access token belongs to a user who can open the target page or database, then search again.'
     });
   });
 
@@ -138,6 +139,58 @@ describe('Notion target discovery and selection', () => {
       type: 'page',
       id: 'page-1',
       displayName: 'Team Home'
+    });
+  });
+
+  it('reads data source metadata and stores a selected data source target with its title property', async () => {
+    await writeLocalStorageValue(storageKeys.notionAuthState, authState);
+
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          object: 'data_source',
+          id: 'data-source-1',
+          parent: { type: 'database_id', database_id: 'database-1' },
+          title: [{ plain_text: 'Engineering Docs' }],
+          properties: {
+            Name: { id: 'title', type: 'title' },
+            Status: { id: 'status', type: 'select' }
+          }
+        }),
+        { status: 200 }
+      )
+    );
+
+    await expect(
+      saveNotionTargetSelection(
+        { type: 'database', id: 'data-source-1', parentObject: 'data_source' },
+        {
+          config: testConfig,
+          fetcher,
+          now: () => new Date('2026-05-18T18:00:00.000Z')
+        }
+      )
+    ).resolves.toEqual({
+      type: 'database',
+      id: 'database-1',
+      displayName: 'Engineering Docs',
+      parentObject: 'data_source',
+      titlePropertyName: 'Name',
+      titlePropertyId: 'title'
+    });
+
+    expect(fetcher).toHaveBeenCalledWith('https://api.notion.com/v1/data_sources/data-source-1', {
+      method: 'GET',
+      headers: expect.any(Headers),
+      signal: expect.any(AbortSignal)
+    });
+    expect(storage.get(storageKeys.notionDefaultTarget)).toEqual({
+      type: 'database',
+      id: 'database-1',
+      displayName: 'Engineering Docs',
+      parentObject: 'data_source',
+      titlePropertyName: 'Name',
+      titlePropertyId: 'title'
     });
   });
 
@@ -172,6 +225,7 @@ describe('Notion target discovery and selection', () => {
       type: 'database',
       id: 'database-1',
       displayName: 'Engineering Docs',
+      parentObject: 'database',
       titlePropertyName: 'Name',
       titlePropertyId: 'title'
     });
@@ -185,6 +239,7 @@ describe('Notion target discovery and selection', () => {
       type: 'database',
       id: 'database-1',
       displayName: 'Engineering Docs',
+      parentObject: 'database',
       titlePropertyName: 'Name',
       titlePropertyId: 'title'
     });

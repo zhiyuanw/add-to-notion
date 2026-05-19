@@ -18,6 +18,32 @@ describe('content-side Confluence page identity extraction', () => {
     expect(extractConfluencePageIdentity()).toEqual({ domPageId: '24680' });
   });
 
+  it('extracts page ID from Confluence content metadata aliases', () => {
+    document.head.innerHTML = '<meta name="ajs-content-id" content="97531" />';
+
+    expect(extractConfluencePageIdentity()).toEqual({ domPageId: '97531' });
+  });
+
+  it('extracts page ID from Confluence data content attributes', () => {
+    document.body.innerHTML = '<main data-content-id="11223"></main>';
+
+    expect(extractConfluencePageIdentity()).toEqual({ domPageId: '11223' });
+  });
+
+  it('extracts page ID from Confluence content ID form inputs', () => {
+    document.body.innerHTML = '<input name="contentId" value="44556" />';
+
+    expect(extractConfluencePageIdentity()).toEqual({ domPageId: '44556' });
+  });
+
+  it('extracts page ID from Confluence ajs params bootstrap data', () => {
+    document.body.innerHTML = `<script>
+      ajs.params.pageId = '77889';
+    </script>`;
+
+    expect(extractConfluencePageIdentity()).toEqual({ bootstrapPageId: '77889' });
+  });
+
   it('extracts page ID from Confluence bootstrap script data when DOM metadata is unavailable', () => {
     document.body.innerHTML = `<script>
       AJS.Meta.set('page-id', '13579');

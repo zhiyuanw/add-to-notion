@@ -12,5 +12,6 @@
     "type": "module"
   },
   "permissions": ["storage", "notifications", "tabs", "activeTab", "scripting"],
+  "host_permissions": ["https://api.notion.com/*"],
   "optional_host_permissions": ["http://*/*", "https://*/*"]
 }

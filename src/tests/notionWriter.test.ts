@@ -96,6 +96,7 @@ describe('Notion page writer', () => {
       type: 'database',
       id: 'database-1',
       displayName: 'Engineering Docs',
+      parentObject: 'database',
       titlePropertyName: 'Name',
       titlePropertyId: 'title'
     };
@@ -139,6 +140,47 @@ describe('Notion page writer', () => {
         children: contentBlocks
       }),
       signal: expect.any(AbortSignal)
+    });
+  });
+
+  it('creates a new Notion page in a data source search target using the Notion database parent contract', async () => {
+    await writeLocalStorageValue(storageKeys.notionAuthState, authState);
+    const target: NotionTarget = {
+      type: 'database',
+      id: 'database-1',
+      displayName: 'Engineering Docs',
+      parentObject: 'data_source',
+      titlePropertyName: 'Name',
+      titlePropertyId: 'title'
+    };
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ id: 'page-1' }), { status: 200 }));
+
+    await createNotionPage(
+      {
+        target,
+        title: 'Confluence Title',
+        blocks: []
+      },
+      {
+        config: testConfig,
+        fetcher,
+        now: () => new Date('2026-05-18T18:00:00.000Z')
+      }
+    );
+
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      parent: { database_id: 'database-1' },
+      properties: {
+        Name: {
+          title: [
+            {
+              type: 'text',
+              text: { content: 'Confluence Title' }
+            }
+          ]
+        }
+      },
+      children: []
     });
   });
 
@@ -203,7 +245,7 @@ describe('Notion page writer', () => {
       titlePropertyName: 'Old Name'
     };
     const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-      new Response(JSON.stringify({ object: 'error', code: 'validation_error' }), {
+      new Response(JSON.stringify({ object: 'error', code: 'validation_error', message: 'body.properties.Name should be defined' }), {
         status: 400
       })
     );
@@ -216,7 +258,8 @@ describe('Notion page writer', () => {
     ).rejects.toMatchObject({
       name: 'NotionWriterError',
       message: 'target-invalid',
-      guidance: 'The selected Notion target is unavailable or its title property changed. Re-select the target in Options.'
+      guidance:
+        'The selected Notion target is unavailable, missing write access, or its title property changed. Re-select the target in Options and check the Notion connection capabilities. Notion: body.properties.Name should be defined'
     });
     await expect(
       createNotionPage(

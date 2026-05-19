@@ -1,6 +1,8 @@
 import type { ConfluenceStorageDocument, ConfluenceStorageElement, ConfluenceStorageNode } from '../confluence/storageParser';
 import type { Degradation } from '../shared/domain';
 
+const NOTION_TEXT_CONTENT_LIMIT = 2000;
+
 export interface NotionTextRichText {
   type: 'text';
   text: {
@@ -401,8 +403,12 @@ function convertMacro(
 ): NotionBlock {
   const macroName = macroNameFor(node);
 
-  if (macroName === 'mermaid') {
+  if (isMermaidMacro(macroName)) {
     return createCodeBlock(plainTextBody(node), codeLanguageOrFallback('mermaid', macroName, degradations, acceptedCodeLanguages));
+  }
+
+  if (macroName === 'plantuml') {
+    return createCodeBlock(plainTextBody(node), 'plain text');
   }
 
   if (macroName === 'code' || macroName === 'noformat') {
@@ -436,7 +442,7 @@ function createCodeBlock(content: string, language: string): NotionCodeBlock {
     object: 'block',
     type: 'code',
     code: {
-      rich_text: [createTextRichText(content.trim(), { annotations: {} })],
+      rich_text: createTextRichTextChunks(content.trim(), { annotations: {} }),
       language
     }
   };
@@ -453,6 +459,10 @@ function createCalloutBlock(richText: NotionRichText[], children: NotionBlock[] 
   };
 }
 
+function isMermaidMacro(macroName: string): boolean {
+  return macroName === 'mermaid' || macroName === 'mermaid-macro';
+}
+
 function codeLanguageOrFallback(
   language: string,
   macroName: string,
@@ -466,7 +476,7 @@ function codeLanguageOrFallback(
   degradations.push({
     type: 'macro-language-fallback',
     source: macroName,
-    message: `Converted ${macroName === 'mermaid' ? 'Mermaid' : macroName} macro to plain-text code because Notion language ${language} is not accepted.`,
+    message: `Converted ${isMermaidMacro(macroName) ? 'Mermaid' : macroName} macro to plain-text code because Notion language ${language} is not accepted.`,
     severity: 'warning'
   });
   return 'plain text';
@@ -619,6 +629,14 @@ function createTextRichText(content: string, context: InlineContext): NotionText
     },
     annotations: context.annotations
   };
+}
+
+function createTextRichTextChunks(content: string, context: InlineContext): NotionTextRichText[] {
+  const chunks: NotionTextRichText[] = [];
+  for (let offset = 0; offset < content.length; offset += NOTION_TEXT_CONTENT_LIMIT) {
+    chunks.push(createTextRichText(content.slice(offset, offset + NOTION_TEXT_CONTENT_LIMIT), context));
+  }
+  return chunks;
 }
 
 function normalizeRichText(richText: NotionRichText[]): NotionRichText[] {

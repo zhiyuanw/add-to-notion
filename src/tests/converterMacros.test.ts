@@ -142,6 +142,61 @@ describe('Confluence macro converter', () => {
     ]);
   });
 
+  it('converts mermaid-macro plugin output to a Mermaid code block', () => {
+    const parsed = parseConfluenceStorageXml(`
+      <ac:structured-macro ac:name="mermaid-macro">
+        <ac:plain-text-body><![CDATA[graph LR
+A-->B]]></ac:plain-text-body>
+      </ac:structured-macro>
+    `);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    const result = convertConfluenceStorageToNotionBlocks(parsed.document);
+
+    expect(result.degradations).toEqual([]);
+    expect(result.blocks).toEqual([
+      {
+        object: 'block',
+        type: 'code',
+        code: {
+          rich_text: [{ type: 'text', text: { content: 'graph LR\nA-->B' }, annotations: {} }],
+          language: 'mermaid'
+        }
+      }
+    ]);
+  });
+
+  it('converts plantuml macro output to a plain-text code block', () => {
+    const parsed = parseConfluenceStorageXml(`
+      <ac:structured-macro ac:name="plantuml">
+        <ac:plain-text-body><![CDATA[@startuml
+Alice -> Bob: hello
+@enduml]]></ac:plain-text-body>
+      </ac:structured-macro>
+    `);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    const result = convertConfluenceStorageToNotionBlocks(parsed.document);
+
+    expect(result.degradations).toEqual([]);
+    expect(result.blocks).toEqual([
+      {
+        object: 'block',
+        type: 'code',
+        code: {
+          rich_text: [{ type: 'text', text: { content: '@startuml\nAlice -> Bob: hello\n@enduml' }, annotations: {} }],
+          language: 'plain text'
+        }
+      }
+    ]);
+  });
+
   it('falls back when Notion does not accept mermaid code language', () => {
     const parsed = parseConfluenceStorageXml(`
       <ac:structured-macro ac:name="mermaid">
@@ -175,5 +230,29 @@ describe('Confluence macro converter', () => {
         severity: 'warning'
       }
     ]);
+  });
+  it('splits code rich text to satisfy Notion content limits', () => {
+    const content = 'x'.repeat(3781);
+    const parsed = parseConfluenceStorageXml(`
+      <ac:structured-macro ac:name="code">
+        <ac:parameter ac:name="language">typescript</ac:parameter>
+        <ac:plain-text-body><![CDATA[${content}]]></ac:plain-text-body>
+      </ac:structured-macro>
+    `);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    const result = convertConfluenceStorageToNotionBlocks(parsed.document);
+    const [block] = result.blocks;
+
+    expect(block).toMatchObject({ object: 'block', type: 'code' });
+    expect(block?.type).toBe('code');
+    if (block?.type !== 'code') {
+      return;
+    }
+    expect(block.code.rich_text.map((item) => item.text.content.length)).toEqual([2000, 1781]);
+    expect(block.code.rich_text.map((item) => item.text.content).join('')).toBe(content);
   });
 });

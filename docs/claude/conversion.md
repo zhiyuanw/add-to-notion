@@ -2,7 +2,8 @@
 
 Required macro mapping from the spec:
 
-- `mermaid` -> Notion code block, language `mermaid` when accepted; otherwise plain-text code fallback with warning.
+- `mermaid` / `mermaid-macro` -> Notion code block, language `mermaid` when accepted; otherwise plain-text code fallback with warning.
+- `plantuml` -> Notion plain-text code block preserving PlantUML source.
 - `code` / `noformat` -> code block preserving text and best-effort language.
 - `info` / `note` / `tip` / `warning` -> callout.
 - `expand` -> toggle with recursive conversion where possible.

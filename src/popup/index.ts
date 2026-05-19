@@ -243,6 +243,10 @@ function renderResultSummary(element: HTMLElement, summary: TerminalClipTaskSumm
     const link = document.createElement('a');
     link.href = summary.notionPageUrl;
     link.textContent = 'Open Notion page';
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      void chrome.tabs.create({ url: summary.notionPageUrl });
+    });
     element.append(link);
   }
 }

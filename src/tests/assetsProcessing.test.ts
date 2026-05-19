@@ -22,13 +22,11 @@ describe('processConfluenceAssets', () => {
     const fetcher = vi.fn(async () => new Response(new Blob(['image-bytes'], { type: 'image/png' }), { status: 200 }));
     const createFileUpload = vi.fn(async () => ({ id: 'upload-1', uploadUrl: 'https://upload.notion.test/file' }));
     const uploadFileContents = vi.fn(async () => undefined);
-    const completeFileUpload = vi.fn(async () => ({ fileUploadId: 'upload-1', expiresAt: '2026-05-18T19:00:00.000Z' }));
 
     const result = await processConfluenceAssets([asset()], {
       fetcher,
       createFileUpload,
       uploadFileContents,
-      completeFileUpload,
       now: () => new Date('2026-05-18T18:00:00.000Z')
     });
 
@@ -50,8 +48,8 @@ describe('processConfluenceAssets', () => {
       status: 'uploaded',
       notionFileRef: {
         fileUploadId: 'upload-1',
-        filename: 'image.png',
-            }
+        filename: 'image.png'
+      }
     });
     expect(result.degradations).toEqual([]);
   });
@@ -70,7 +68,6 @@ describe('processConfluenceAssets', () => {
       await new Promise<void>((resolve) => releaseUpload.push(resolve));
       activeUploads -= 1;
     });
-    const completeFileUpload = vi.fn(async (fileUploadId: string) => ({ fileUploadId, expiresAt: '2026-05-18T19:00:00.000Z' }));
 
     const processing = processConfluenceAssets(
       Array.from({ length: 5 }, (_, index) =>
@@ -80,7 +77,6 @@ describe('processConfluenceAssets', () => {
         fetcher,
         createFileUpload,
         uploadFileContents,
-        completeFileUpload,
         now: () => new Date('2026-05-18T18:00:00.000Z')
       }
     );
@@ -164,21 +160,6 @@ describe('processConfluenceAssets', () => {
       status: 'failed',
       notionFileRef: { externalUrl: 'https://wiki.example.com/download/attachments/123/image.png' },
       degradation: expect.objectContaining({ type: 'asset-upload-failed' })
-    });
-  });
-
-  it('keeps completed file upload refs for final attach-time expiry validation', async () => {
-    const result = await processConfluenceAssets([asset()], {
-      fetcher: vi.fn(async () => new Response(new Blob(['image-bytes'], { type: 'image/png' }), { status: 200 })),
-      createFileUpload: vi.fn(async () => ({ id: 'upload-1', uploadUrl: 'https://upload.notion.test/file' })),
-      uploadFileContents: vi.fn(async () => undefined),
-      completeFileUpload: vi.fn(async () => ({ fileUploadId: 'upload-1', expiresAt: '2026-05-18T18:00:00.000Z' })),
-      now: () => new Date('2026-05-18T18:00:00.000Z')
-    });
-
-    expect(result).toMatchObject({
-      assets: [expect.objectContaining({ status: 'uploaded', notionFileRef: expect.objectContaining({ fileUploadId: 'upload-1', expiresAt: '2026-05-18T18:00:00.000Z' }) })],
-      degradations: []
     });
   });
 });

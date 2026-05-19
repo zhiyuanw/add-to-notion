@@ -7,10 +7,18 @@ export interface NotionTargetSearchResult {
   guidance?: string;
 }
 
-export type NotionTargetSelection = NotionPageTarget | Pick<NotionDatabaseTarget, 'type' | 'id'>;
+export type NotionTargetSelection = NotionPageTarget | Pick<NotionDatabaseTarget, 'type' | 'id' | 'parentObject'>;
 
 interface NotionSearchResponse {
   results?: unknown;
+}
+
+interface NotionDataSourceResponse {
+  object?: unknown;
+  id?: unknown;
+  parent?: unknown;
+  title?: unknown;
+  properties?: unknown;
 }
 
 interface NotionDatabaseResponse {
@@ -28,7 +36,7 @@ export class NotionTargetError extends Error {
 }
 
 export const notionTargetAccessGuidance =
-  'No accessible Notion pages or databases found. Grant the integration access to a page or database in Notion, then search again.';
+  'No accessible Notion pages or databases found. Check that this personal access token belongs to a user who can open the target page or database, then search again.';
 
 export async function searchNotionTargets(query = '', options: NotionAuthOptions = {}): Promise<NotionTargetSearchResult> {
   const response = await notionApiFetch(
@@ -66,7 +74,7 @@ export async function saveNotionTargetSelection(
   }
 
   if (selection.type === 'database') {
-    const target = await fetchDatabaseTarget(selection.id, options);
+    const target = await fetchDatabaseTarget(selection.id, selection.parentObject ?? 'database', options);
     await writeLocalStorageValue(storageKeys.notionDefaultTarget, target);
     return target;
   }
@@ -74,7 +82,46 @@ export async function saveNotionTargetSelection(
   throw new NotionTargetError('invalid-target-type');
 }
 
-async function fetchDatabaseTarget(id: string, options: NotionAuthOptions): Promise<NotionDatabaseTarget> {
+async function fetchDatabaseTarget(id: string, parentObject: NonNullable<NotionDatabaseTarget['parentObject']>, options: NotionAuthOptions): Promise<NotionDatabaseTarget> {
+  return parentObject === 'data_source' ? fetchDataSourceTarget(id, options) : fetchLegacyDatabaseTarget(id, options);
+}
+
+async function fetchDataSourceTarget(id: string, options: NotionAuthOptions): Promise<NotionDatabaseTarget> {
+  const dataSourceId = requireNonEmptyString(id, 'missing-database-id');
+  const response = await notionApiFetch(`https://api.notion.com/v1/data_sources/${encodeURIComponent(dataSourceId)}`, { method: 'GET' }, options);
+
+  if (!response.ok) {
+    throw new NotionTargetError(`notion-database-fetch-failed:${response.status}`);
+  }
+
+  const payload = (await response.json()) as NotionDataSourceResponse;
+
+  if (payload.object !== 'data_source') {
+    throw new NotionTargetError('invalid-database-response');
+  }
+
+  const titleProperty = findTitleProperty(payload.properties);
+  const databaseId = extractDataSourceParentDatabaseId(payload.parent);
+
+  if (!titleProperty) {
+    throw new NotionTargetError('database-title-property-missing');
+  }
+
+  if (!databaseId) {
+    throw new NotionTargetError('data-source-parent-database-missing');
+  }
+
+  return {
+    type: 'database',
+    id: databaseId,
+    displayName: extractRichTextPlainText(payload.title) ?? 'Untitled database',
+    parentObject: 'data_source',
+    titlePropertyName: titleProperty.name,
+    titlePropertyId: titleProperty.id
+  };
+}
+
+async function fetchLegacyDatabaseTarget(id: string, options: NotionAuthOptions): Promise<NotionDatabaseTarget> {
   const databaseId = requireNonEmptyString(id, 'missing-database-id');
   const response = await notionApiFetch(`https://api.notion.com/v1/databases/${encodeURIComponent(databaseId)}`, { method: 'GET' }, options);
 
@@ -98,6 +145,7 @@ async function fetchDatabaseTarget(id: string, options: NotionAuthOptions): Prom
     type: 'database',
     id: requireNonEmptyString(payload.id, 'missing-database-id'),
     displayName: extractRichTextPlainText(payload.title) ?? 'Untitled database',
+    parentObject: 'database',
     titlePropertyName: titleProperty.name,
     titlePropertyId: titleProperty.id
   };
@@ -129,7 +177,7 @@ function mapSearchResultToTarget(result: unknown): NotionTarget[] {
     ];
   }
 
-  if (result.object === 'database') {
+  if (result.object === 'database' || result.object === 'data_source') {
     const id = optionalNonEmptyString(result.id);
 
     if (!id) {
@@ -140,12 +188,21 @@ function mapSearchResultToTarget(result: unknown): NotionTarget[] {
       {
         type: 'database',
         id,
-        displayName: extractRichTextPlainText(result.title) ?? 'Untitled database'
+        displayName: extractRichTextPlainText(result.title) ?? 'Untitled database',
+        parentObject: result.object
       }
     ];
   }
 
   return [];
+}
+
+function extractDataSourceParentDatabaseId(parent: unknown): string | undefined {
+  if (!isRecord(parent)) {
+    return undefined;
+  }
+
+  return optionalNonEmptyString(parent.database_id);
 }
 
 function extractPageTitle(page: Record<string, unknown>): string | undefined {

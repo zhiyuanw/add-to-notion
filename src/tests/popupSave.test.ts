@@ -10,6 +10,7 @@ type TestTab = { id?: number; url?: string };
 
 const storage = new Map<string, unknown>();
 let queryTabs: ReturnType<typeof vi.fn<[], Promise<TestTab[]>>>;
+let createTab: ReturnType<typeof vi.fn<[chrome.tabs.CreateProperties], Promise<unknown>>>;
 let sendMessage: ReturnType<typeof vi.fn<[unknown], Promise<ClipTask>>>;
 let storageChangeListeners: Array<(changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void>;
 
@@ -21,11 +22,13 @@ beforeEach(() => {
   storage.clear();
   storageChangeListeners = [];
   queryTabs = vi.fn(async (): Promise<TestTab[]> => [{ id: 7, url: pageUrl }]);
+  createTab = vi.fn(async (_properties: chrome.tabs.CreateProperties): Promise<unknown> => ({}));
   sendMessage = vi.fn();
 
   vi.stubGlobal('chrome', {
     tabs: {
-      query: queryTabs
+      query: queryTabs,
+      create: createTab
     },
     runtime: {
       sendMessage
@@ -265,6 +268,27 @@ describe('popup save UI', () => {
     expect(getText('#popup-result-summary')).toContain('Success: created a new Notion page.');
     expect(getText('#popup-result-summary')).toContain('Warnings: 2.');
     expect(getElement<HTMLAnchorElement>('#popup-result-summary a', HTMLAnchorElement).href).toBe('https://notion.example/roadmap');
+  });
+
+  it('opens the created Notion page in a new tab when the success link is clicked', async () => {
+    seedConfiguredPage();
+    storage.set(storageKeys.lastTerminalClipTaskSummary, {
+      taskId: 'task-done',
+      status: 'succeeded',
+      completedAt: '2026-05-18T20:50:00.000Z',
+      sourceTitle: 'Roadmap',
+      sourceUrl: pageUrl,
+      target,
+      notionPageUrl: 'https://notion.example/roadmap',
+      warningCount: 0
+    });
+
+    await mountPopupPage(getApp());
+    await flushPromises();
+    getElement<HTMLAnchorElement>('#popup-result-summary a', HTMLAnchorElement).click();
+    await flushPromises();
+
+    expect(createTab).toHaveBeenCalledWith({ url: 'https://notion.example/roadmap' });
   });
 
   it('shows terminal partial write failure summary with the partial page link', async () => {

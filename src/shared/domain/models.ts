@@ -34,6 +34,7 @@ export interface NotionDatabaseTarget {
   type: 'database';
   id: string;
   displayName: string;
+  parentObject?: 'database' | 'data_source';
   titlePropertyName?: string;
   titlePropertyId?: string;
 }

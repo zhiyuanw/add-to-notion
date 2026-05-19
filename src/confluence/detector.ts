@@ -1,13 +1,21 @@
 import type { ConfluencePageRef } from '../shared/domain';
+import { fetchWithTimeoutAndRetry, type RetriableFetchAttempt } from '../shared/request';
 
 import { normalizeConfluenceBaseUrl } from './baseUrl';
 import { hasConfluenceHostPermission } from './permissions';
+
+export type ConfluenceDisplayPageIdResolver = (input: {
+  normalizedBaseUrl: string;
+  relativePath: string;
+}) => Promise<string | undefined>;
 
 export type ConfluencePageDetectionInput = {
   baseUrl: string;
   pageUrl: string;
   domPageId?: string;
   bootstrapPageId?: string;
+  displayPageIdResolver?: ConfluenceDisplayPageIdResolver;
+  fetcher?: RetriableFetchAttempt;
 };
 
 export type ConfluencePageDetectionFailureReason =
@@ -46,7 +54,7 @@ export async function detectConfluencePage(input: ConfluencePageDetectionInput):
   }
 
   const relativePath = getRelativePath(pageUrl.pathname, baseUrl.contextPath);
-  const pageId = detectPageId(relativePath, pageUrl, input);
+  const pageId = await detectPageId(relativePath, pageUrl, input, baseUrl.normalizedUrl);
 
   if (pageId === undefined) {
     return { ok: false, reason: 'unsupported-url' };
@@ -87,7 +95,12 @@ function getRelativePath(pathname: string, contextPath: string): string {
   return relativePath === '' ? '/' : relativePath;
 }
 
-function detectPageId(relativePath: string, pageUrl: URL, input: ConfluencePageDetectionInput): string | undefined {
+async function detectPageId(
+  relativePath: string,
+  pageUrl: URL,
+  input: ConfluencePageDetectionInput,
+  normalizedBaseUrl: string
+): Promise<string | undefined> {
   if (relativePath === '/pages/viewpage.action') {
     return pageUrl.searchParams.get('pageId') ?? '';
   }
@@ -98,8 +111,72 @@ function detectPageId(relativePath: string, pageUrl: URL, input: ConfluencePageD
   }
 
   if (/^\/display\/[^/]+\/.+/u.test(relativePath)) {
-    return input.domPageId ?? input.bootstrapPageId ?? '';
+    return input.domPageId ?? input.bootstrapPageId ?? await (input.displayPageIdResolver ?? resolveDisplayPageIdFromRest)({
+      normalizedBaseUrl,
+      relativePath,
+      fetcher: input.fetcher
+    });
   }
 
   return undefined;
+}
+
+type RestDisplayPageIdResolverInput = {
+  normalizedBaseUrl: string;
+  relativePath: string;
+  fetcher?: RetriableFetchAttempt;
+};
+
+type RestContentSearchResponse = {
+  results?: Array<{ id?: unknown }>;
+};
+
+async function resolveDisplayPageIdFromRest(input: RestDisplayPageIdResolverInput): Promise<string> {
+  const displayPage = parseDisplayRelativePath(input.relativePath);
+  if (!displayPage) {
+    return '';
+  }
+
+  const restUrl = new URL(`${input.normalizedBaseUrl}/rest/api/content`);
+  restUrl.searchParams.set('spaceKey', displayPage.spaceKey);
+  restUrl.searchParams.set('title', displayPage.title);
+  restUrl.searchParams.set('type', 'page');
+  restUrl.searchParams.set('limit', '1');
+
+  try {
+    const response = await fetchWithTimeoutAndRetry(restUrl.href, {
+      fetcher: input.fetcher,
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      return '';
+    }
+
+    const payload = (await response.json()) as RestContentSearchResponse;
+    const pageId = payload.results?.[0]?.id;
+    return typeof pageId === 'string' ? pageId : '';
+  } catch {
+    return '';
+  }
+}
+
+function parseDisplayRelativePath(relativePath: string): { spaceKey: string; title: string } | undefined {
+  const match = /^\/display\/([^/]+)\/(.+)$/u.exec(relativePath);
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    spaceKey: decodeDisplayPathSegment(match[1]),
+    title: decodeDisplayPathSegment(match[2])
+  };
+}
+
+function decodeDisplayPathSegment(value: string): string {
+  try {
+    return decodeURIComponent(value.replace(/\+/gu, ' '));
+  } catch {
+    return value.replace(/\+/gu, ' ');
+  }
 }

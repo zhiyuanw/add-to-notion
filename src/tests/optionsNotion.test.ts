@@ -110,9 +110,7 @@ describe('Notion options UI', () => {
     getButton('#save-notion-token').click();
     await flushPromises();
 
-    expect(getText('#notion-settings-status')).toBe(
-      'Notion rejected this token. Check the token value and share the target page or database with the integration.'
-    );
+    expect(getText('#notion-settings-status')).toBe('Notion rejected this token. Check the token value and personal access token API access.');
     expect(getText('#notion-authorization-status')).toBe('Not connected');
     expect(storage.has(storageKeys.notionAuthState)).toBe(false);
     expect(storage.has(storageKeys.notionWorkspace)).toBe(false);
@@ -136,8 +134,8 @@ describe('Notion options UI', () => {
               }
             },
             {
-              object: 'database',
-              id: 'database-1',
+              object: 'data_source',
+              id: 'data-source-1',
               title: [{ plain_text: 'Engineering Docs' }]
             }
           ]
@@ -171,8 +169,8 @@ describe('Notion options UI', () => {
           JSON.stringify({
             results: [
               {
-                object: 'database',
-                id: 'database-1',
+                object: 'data_source',
+                id: 'data-source-1',
                 title: [{ plain_text: 'Engineering Docs' }]
               }
             ]
@@ -183,8 +181,9 @@ describe('Notion options UI', () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            object: 'database',
-            id: 'database-1',
+            object: 'data_source',
+            id: 'data-source-1',
+            parent: { type: 'database_id', database_id: 'database-1' },
             title: [{ plain_text: 'Engineering Docs' }],
             properties: {
               Name: { id: 'title', type: 'title' }
@@ -198,13 +197,14 @@ describe('Notion options UI', () => {
 
     getButton('#search-notion-targets').click();
     await flushPromises();
-    getButton('[data-target-id="database-1"]').click();
+    getButton('[data-target-id="data-source-1"]').click();
     await flushPromises();
 
     expect(storage.get(storageKeys.notionDefaultTarget)).toEqual({
       type: 'database',
       id: 'database-1',
       displayName: 'Engineering Docs',
+      parentObject: 'data_source',
       titlePropertyName: 'Name',
       titlePropertyId: 'title'
     });
@@ -222,7 +222,7 @@ describe('Notion options UI', () => {
     await flushPromises();
 
     expect(getText('#notion-target-guidance')).toBe(
-      'No accessible Notion pages or databases found. Grant the integration access to a page or database in Notion, then search again.'
+      'No accessible Notion pages or databases found. Check that this personal access token belongs to a user who can open the target page or database, then search again.'
     );
   });
 

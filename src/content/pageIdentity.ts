@@ -22,8 +22,11 @@ let handlerRegistered = false;
 export function extractConfluencePageIdentity(doc: Document = document): ConfluencePageIdentity {
   const domPageId = firstNonEmpty(
     doc.querySelector<HTMLMetaElement>('meta[name="ajs-page-id"]')?.content,
+    doc.querySelector<HTMLMetaElement>('meta[name="ajs-content-id"]')?.content,
     doc.querySelector<HTMLElement>('[data-page-id]')?.dataset.pageId,
-    doc.querySelector<HTMLInputElement>('input[name="pageId"]')?.value
+    doc.querySelector<HTMLElement>('[data-content-id]')?.dataset.contentId,
+    doc.querySelector<HTMLInputElement>('input[name="pageId"]')?.value,
+    doc.querySelector<HTMLInputElement>('input[name="contentId"]')?.value
   );
 
   if (domPageId) {
@@ -80,7 +83,9 @@ function extractBootstrapPageIdFromScript(source: string): string | undefined {
     extractAjsMetaSetCall(source, 'page-id'),
     extractAjsMetaSetCall(source, 'content-id'),
     extractAjsMetaAssignment(source, 'page-id'),
-    extractAjsMetaAssignment(source, 'content-id')
+    extractAjsMetaAssignment(source, 'content-id'),
+    extractAjsParamsAssignment(source, 'pageId'),
+    extractAjsParamsAssignment(source, 'contentId')
   );
 }
 
@@ -93,6 +98,12 @@ function extractAjsMetaAssignment(source: string, key: string): string | undefin
 function extractAjsMetaSetCall(source: string, key: string): string | undefined {
   const escapedKey = escapeRegExp(key);
   const pattern = new RegExp(String.raw`AJS\.Meta\.set\(\s*["']${escapedKey}["']\s*,\s*["'](\d+)["']`, 'u');
+  return pattern.exec(source)?.[1];
+}
+
+function extractAjsParamsAssignment(source: string, key: string): string | undefined {
+  const escapedKey = escapeRegExp(key);
+  const pattern = new RegExp(String.raw`ajs\.params\.${escapedKey}\s*=\s*["'](\d+)["']`, 'u');
   return pattern.exec(source)?.[1];
 }
 

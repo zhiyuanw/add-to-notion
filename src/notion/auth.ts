@@ -89,6 +89,10 @@ export async function notionApiFetch(input: RequestInfo | URL, init: RequestInit
     }
   }
 
+  if (shouldUseJsonContentType(init.body) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
   return fetchWithTimeoutAndRetry(input, { ...init, fetcher: options.fetcher, headers, deadlineMs: options.deadlineMs });
 }
 
@@ -116,6 +120,10 @@ function normalizeNotionToken(token: string): string {
   }
 
   return normalized;
+}
+
+function shouldUseJsonContentType(body: BodyInit | null | undefined): boolean {
+  return typeof body === 'string';
 }
 
 function buildNotionApiHeaders(accessToken: string, config: NotionApiConfig): Record<string, string> {

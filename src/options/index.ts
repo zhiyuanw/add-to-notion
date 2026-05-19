@@ -375,7 +375,7 @@ async function selectNotionTarget(
   commit: (state: NotionOptionsState) => void
 ): Promise<void> {
   const selectedTarget = await saveNotionTargetSelection(
-    target.type === 'database' ? { type: 'database', id: target.id } : target,
+    target.type === 'database' ? { type: 'database', id: target.id, parentObject: target.parentObject } : target,
     dependencies.notion
   );
 
@@ -441,7 +441,7 @@ function tokenSaveFailureMessage(error: unknown): string {
   }
 
   if (error.message.startsWith('notion-token-validation-failed:')) {
-    return 'Notion rejected this token. Check the token value and share the target page or database with the integration.';
+    return 'Notion rejected this token. Check the token value and personal access token API access.';
   }
 
   return error.message;

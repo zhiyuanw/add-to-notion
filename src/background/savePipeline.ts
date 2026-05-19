@@ -63,7 +63,8 @@ export function createSaveConfluencePageOperation(
         baseUrl,
         pageUrl: options.pageUrl,
         domPageId: options.domPageId,
-        bootstrapPageId: options.bootstrapPageId
+        bootstrapPageId: options.bootstrapPageId,
+        fetcher: options.fetcher
       });
       if (!detection.ok) {
         logger.stageEnd('detecting', { status: 'failed', reason: detection.reason });

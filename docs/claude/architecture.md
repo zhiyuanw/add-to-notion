@@ -32,7 +32,8 @@ Current tab
 
 - Keep Notion tokens in `chrome.storage.local`; content scripts must not receive them.
 - Do not request `cookies` permission; Confluence fetches use `fetch(..., { credentials: 'include' })`.
-- Do not request `<all_urls>`; manifest `optional_host_permissions` may predeclare only `http://*/*` and `https://*/*` as MV3 candidate patterns, but runtime permission requests must request only the configured Confluence origin.
+- Do not request `<all_urls>`; manifest `host_permissions` may include only `https://api.notion.com/*` for Notion API calls.
+- Manifest `optional_host_permissions` may predeclare only `http://*/*` and `https://*/*` as MV3 candidate patterns, but runtime permission requests must request only the configured Confluence origin.
 - Host permission is origin-scoped, but detector and REST content fetcher must enforce the normalized Confluence base URL path in code.
 - Same-origin assets referenced by storage XML or attachment metadata may be downloaded even when outside the normalized base URL path.
 - Parser must disable external entities and resource loading.
