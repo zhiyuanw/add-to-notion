@@ -3,7 +3,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mountOptionsPage } from '../options/index';
-import { notionOAuthConfig, type NotionOAuthConfig } from '../notion';
+import {
+  NOTION_OAUTH_CLIENT_ID_CONFIGURATION_MESSAGE,
+  notionOAuthConfig,
+  type NotionOAuthConfig
+} from '../notion';
 import { storageKeys, type NotionAuthState, type NotionWorkspaceInfo } from '../shared/storage';
 
 const storage = new Map<string, unknown>();
@@ -232,6 +236,17 @@ describe('Notion options UI', () => {
     expect(getText('#notion-target-guidance')).toBe(
       'No accessible Notion pages or databases found. Grant the integration access to a page or database in Notion, then search again.'
     );
+  });
+
+  it('shows clear setup guidance when the OAuth client ID is missing from the build', async () => {
+    await mountOptionsPage(getApp(), { notion: { ...notionOptions, config: { ...testConfig, clientId: '' } } });
+
+    getButton('#connect-notion').click();
+    await flushPromises();
+
+    expect(getText('#notion-settings-status')).toBe(NOTION_OAUTH_CLIENT_ID_CONFIGURATION_MESSAGE);
+    expect(getText('#notion-authorization-status')).toBe('Not connected');
+    expect(launchWebAuthFlow).not.toHaveBeenCalled();
   });
 
   it('logs out Notion while keeping Confluence configuration visible', async () => {

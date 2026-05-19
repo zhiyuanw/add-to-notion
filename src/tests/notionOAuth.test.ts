@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR,
   buildNotionAuthorizationUrl,
   exchangeNotionAuthorizationCode,
   getNotionOAuthRedirectUri,
+  notionOAuthClientConfig,
   notionOAuthConfig,
   parseNotionOAuthCallback,
   startNotionOAuth,
@@ -48,6 +50,11 @@ describe('Notion OAuth configuration', () => {
     expect(notionOAuthConfig.notionVersion).toBe('2022-06-28');
     expect(notionOAuthConfig.requestedScopes).toEqual(['read_content', 'insert_content', 'update_content']);
     expect(notionOAuthConfig.requestedScopes).not.toContain('read_user');
+  });
+
+  it('reads the default client ID from explicit build-time configuration', () => {
+    expect(notionOAuthConfig.clientId).toBe(notionOAuthClientConfig.clientId);
+    expect(notionOAuthConfig.clientId).not.toBe('__NOTION_OAUTH_CLIENT_ID__');
   });
 
   it('builds an MV3-compatible redirect URI through chrome.identity', () => {
@@ -223,8 +230,17 @@ describe('Notion token exchange and persistence', () => {
     expect(chrome.storage.local.set).not.toHaveBeenCalled();
   });
 
-  it('rejects OAuth launch when the client id is not configured', async () => {
-    await expect(startNotionOAuth({ config: notionOAuthConfig })).rejects.toThrow('notion-oauth-client-id-not-configured');
+  it('rejects OAuth launch when the client id is missing', async () => {
+    await expect(startNotionOAuth({ config: { ...testConfig, clientId: '' } })).rejects.toThrow(
+      NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR
+    );
+    expect(chrome.identity.launchWebAuthFlow).not.toHaveBeenCalled();
+  });
+
+  it('rejects OAuth launch when the client id is still a placeholder', async () => {
+    await expect(startNotionOAuth({ config: { ...testConfig, clientId: '__NOTION_OAUTH_CLIENT_ID__' } })).rejects.toThrow(
+      NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR
+    );
     expect(chrome.identity.launchWebAuthFlow).not.toHaveBeenCalled();
   });
 });

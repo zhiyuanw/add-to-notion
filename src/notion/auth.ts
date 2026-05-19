@@ -9,7 +9,8 @@ import {
 } from '../shared/storage';
 import { fetchWithTimeoutAndRetry, type RetriableFetchAttempt } from '../shared/request';
 import type { DebugLogger } from '../shared/debugLogger';
-import { notionOAuthConfig, type NotionOAuthConfig } from './oauth';
+import { assertConfiguredNotionOAuthClient, notionOAuthConfig, type NotionOAuthConfig } from './oauth';
+import { NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR } from './oauthClientConfig';
 
 export interface NotionAuthOptions {
   config?: NotionOAuthConfig;
@@ -129,8 +130,14 @@ export function isNotionAccessTokenExpired(authState: Pick<NotionAuthState, 'exp
 }
 
 function assertConfiguredClient(config: NotionOAuthConfig): void {
-  if (!config.clientId || config.clientId === notionOAuthConfig.clientId) {
-    throw new NotionAuthError('notion-oauth-client-id-not-configured');
+  try {
+    assertConfiguredNotionOAuthClient(config);
+  } catch (error) {
+    if (error instanceof Error && error.message === NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR) {
+      throw new NotionAuthError(NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR);
+    }
+
+    throw error;
   }
 }
 

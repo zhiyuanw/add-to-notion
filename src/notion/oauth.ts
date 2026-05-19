@@ -1,6 +1,11 @@
 import { fetchWithTimeoutAndRetry, type RetriableFetchAttempt } from '../shared/request';
 import { storageKeys, writeLocalStorageValue } from '../shared/storage';
 import type { NotionAuthState, NotionWorkspaceInfo } from '../shared/storage';
+import {
+  NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR,
+  isConfiguredNotionOAuthClientId,
+  notionOAuthClientConfig
+} from './oauthClientConfig';
 
 export interface NotionOAuthConfig {
   authorizationEndpoint: string;
@@ -20,7 +25,7 @@ export const notionOAuthConfig: NotionOAuthConfig = {
   notionVersion: '2022-06-28',
   requestedScopes: ['read_content', 'insert_content', 'update_content'],
   owner: 'user',
-  clientId: '__NOTION_OAUTH_CLIENT_ID__',
+  clientId: notionOAuthClientConfig.clientId,
   redirectPath: 'notion-oauth'
 };
 
@@ -58,7 +63,7 @@ export class NotionOAuthError extends Error {
 
 export async function startNotionOAuth(options: StartNotionOAuthOptions = {}): Promise<NotionOAuthResult> {
   const config = options.config ?? notionOAuthConfig;
-  assertConfiguredClient(config);
+  assertConfiguredNotionOAuthClient(config);
 
   const redirectUri = getNotionOAuthRedirectUri(config);
   const state = options.createState?.() ?? crypto.randomUUID();
@@ -128,7 +133,7 @@ export async function exchangeNotionAuthorizationCode(
   options: Pick<StartNotionOAuthOptions, 'config' | 'now' | 'fetcher' | 'deadlineMs'> = {}
 ): Promise<NotionOAuthResult> {
   const config = options.config ?? notionOAuthConfig;
-  assertConfiguredClient(config);
+  assertConfiguredNotionOAuthClient(config);
 
   const response = await fetchWithTimeoutAndRetry(config.tokenEndpoint, {
     fetcher: options.fetcher,
@@ -150,9 +155,9 @@ export async function persistNotionOAuthResult(result: NotionOAuthResult): Promi
   await writeLocalStorageValue(storageKeys.notionWorkspace, result.workspace);
 }
 
-function assertConfiguredClient(config: NotionOAuthConfig): void {
-  if (!config.clientId || config.clientId === notionOAuthConfig.clientId) {
-    throw new NotionOAuthError('notion-oauth-client-id-not-configured');
+export function assertConfiguredNotionOAuthClient(config: Pick<NotionOAuthConfig, 'clientId'>): void {
+  if (!isConfiguredNotionOAuthClientId(config.clientId)) {
+    throw new NotionOAuthError(NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR);
   }
 }
 

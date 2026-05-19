@@ -4,6 +4,7 @@ Started: 2026年 5月19日 星期二 12时11分47秒 CST
 
 ## Codebase Patterns
 - Release checklist coverage is centralized in `src/tests/releaseChecklist.test.ts` and can import `public/manifest.json` directly.
+- Build-time extension config can live in a small source module with an empty default and be injected into `dist` by `scripts/build-extension.mjs`.
 
 ## 2026-05-19 12:14 - US-001
 - Implemented MV3 manifest permissions required for Notion OAuth and runtime Confluence host access.
@@ -12,4 +13,14 @@ Started: 2026年 5月19日 星期二 12时11分47秒 CST
 - **Learnings for future iterations:**
   - Manifest release-readiness expectations belong in `src/tests/releaseChecklist.test.ts` so packaging regressions fail with the rest of the V1 checklist.
   - Confluence permission helpers already request only the normalized configured origin through `src/confluence/permissions.ts`; manifest optional host permissions only make those runtime requests possible.
+---
+
+## 2026-05-19 12:27 - US-002
+- Implemented deployable Notion OAuth client configuration through a build-time `NOTION_OAUTH_CLIENT_ID` injection path.
+- Added pre-launch validation so missing or placeholder client IDs fail before `chrome.identity.launchWebAuthFlow`.
+- Added clear Options UI guidance when the extension build is missing Notion OAuth client configuration.
+- Files changed: `src/notion/oauthClientConfig.ts`, `src/notion/oauth.ts`, `src/notion/auth.ts`, `src/notion/index.ts`, `src/options/index.ts`, `scripts/build-extension.mjs`, `src/tests/notionOAuth.test.ts`, `src/tests/optionsNotion.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Keep OAuth configuration validation shared between OAuth launch and token refresh so runtime auth paths fail consistently.
+  - Build-time-only extension configuration can be tested at the source-module boundary and verified by `npm run build` for injection safety.
 ---

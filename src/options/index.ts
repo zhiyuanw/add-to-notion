@@ -5,6 +5,8 @@ import {
   type ConfluenceBaseUrlValidationError
 } from '../confluence';
 import {
+  NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR,
+  NOTION_OAUTH_CLIENT_ID_CONFIGURATION_MESSAGE,
   getNotionAuthorizationStatus,
   logoutNotion,
   searchNotionTargets,
@@ -317,7 +319,18 @@ async function connectNotion(
   dependencies: OptionsPageDependencies,
   commit: (state: NotionOptionsState) => Promise<void>
 ): Promise<void> {
-  await startNotionOAuth(dependencies.notion);
+  try {
+    await startNotionOAuth(dependencies.notion);
+  } catch (error) {
+    if (error instanceof Error && error.message === NOTION_OAUTH_CLIENT_ID_CONFIGURATION_ERROR) {
+      const state = await loadNotionOptionsState(dependencies.notion);
+      await commit({ ...state, statusMessage: NOTION_OAUTH_CLIENT_ID_CONFIGURATION_MESSAGE });
+      return;
+    }
+
+    throw error;
+  }
+
   const state = await loadNotionOptionsState(dependencies.notion);
   await commit({ ...state, statusMessage: 'Notion connected.' });
 }

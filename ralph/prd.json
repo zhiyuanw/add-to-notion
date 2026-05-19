@@ -34,8 +34,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added build-time NOTION_OAUTH_CLIENT_ID injection, pre-launch missing/placeholder validation, clear Options UI guidance, and OAuth coverage."
     },
     {
       "id": "US-003",
