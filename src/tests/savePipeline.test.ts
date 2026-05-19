@@ -64,6 +64,9 @@ async function seedConfiguredState(): Promise<void> {
 }
 
 function makeContext() {
+  const startMs = Date.parse(startedAt);
+  vi.spyOn(Date, 'now').mockReturnValue(startMs + 2_000);
+
   return {
     taskId: 'task-1',
     startedAt,
