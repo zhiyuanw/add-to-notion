@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import manifest from '../../public/manifest.json';
 import { extractConfluenceAssets, processConfluenceAssets, renderProcessedAssetsToNotionBlocks, type ExtractedConfluenceAsset } from '../assets';
 import { recoverInterruptedClipTaskOnStartup, startBackgroundClipTask } from '../background/clipTaskRunner';
 import { detectConfluencePage, fetchConfluencePageStorage, normalizeConfluenceBaseUrl, parseConfluenceStorageXml } from '../confluence';
@@ -129,6 +130,13 @@ beforeEach(() => {
 });
 
 describe('V1 release checklist verification', () => {
+  it('declares only the runtime permissions and optional host access needed for release', () => {
+    expect(manifest.permissions).toEqual(expect.arrayContaining(['identity', 'storage', 'notifications', 'tabs', 'activeTab']));
+    expect(manifest.permissions).not.toContain('cookies');
+    expect(manifest.optional_host_permissions).toEqual(['http://*/*', 'https://*/*']);
+    expect(manifest.optional_host_permissions).not.toContain('<all_urls>');
+  });
+
   it('ships sanitized fixtures named simple, macro-heavy, and image-heavy', () => {
     expect(releaseFixtureNames).toEqual(['simple', 'macro-heavy', 'image-heavy']);
 

@@ -17,8 +17,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Declared identity permission and http/https optional host permissions with release checklist coverage."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-002",
