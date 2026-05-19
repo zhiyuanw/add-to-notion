@@ -155,6 +155,12 @@ export interface NotionAssetPlaceholderBlock {
 
 export interface ConfluenceToNotionConversionOptions {
   acceptedCodeLanguages?: ReadonlySet<string>;
+  attachments?: readonly ConfluenceAttachmentReference[];
+}
+
+interface ConfluenceAttachmentReference {
+  filename: string;
+  downloadUrl?: string;
 }
 
 export const defaultAcceptedCodeLanguages = new Set([
@@ -194,7 +200,7 @@ export function convertConfluenceStorageToNotionBlocks(
   const degradations: Degradation[] = [];
   const acceptedCodeLanguages = options.acceptedCodeLanguages ?? defaultAcceptedCodeLanguages;
   return {
-    blocks: convertBlockNodes(document.children, degradations, acceptedCodeLanguages),
+    blocks: convertBlockNodes(document.children, degradations, acceptedCodeLanguages, options.attachments ?? []),
     degradations
   };
 }
@@ -202,7 +208,8 @@ export function convertConfluenceStorageToNotionBlocks(
 function convertBlockNodes(
   nodes: ConfluenceStorageNode[],
   degradations: Degradation[],
-  acceptedCodeLanguages: ReadonlySet<string>
+  acceptedCodeLanguages: ReadonlySet<string>,
+  attachments: readonly ConfluenceAttachmentReference[] = []
 ): NotionBlock[] {
   const blocks: NotionBlock[] = [];
   let textBuffer: ConfluenceStorageNode[] = [];
@@ -224,12 +231,12 @@ function convertBlockNodes(
     textBuffer = [];
 
     if (isAssetPlaceholderElement(node)) {
-      blocks.push(createAssetPlaceholderBlock(node));
+      blocks.push(createAssetPlaceholderBlock(node, attachments));
       continue;
     }
 
     if (isMacro(node)) {
-      blocks.push(convertMacro(node, degradations, acceptedCodeLanguages));
+      blocks.push(convertMacro(node, degradations, acceptedCodeLanguages, attachments));
       continue;
     }
 
@@ -239,12 +246,12 @@ function convertBlockNodes(
     }
 
     if (node.localName === 'p') {
-      blocks.push(...convertParagraphNode(node, degradations, acceptedCodeLanguages));
+      blocks.push(...convertParagraphNode(node, degradations, acceptedCodeLanguages, attachments));
       continue;
     }
 
     if (node.localName === 'ul' || node.localName === 'ol') {
-      blocks.push(...convertList(node, degradations, acceptedCodeLanguages));
+      blocks.push(...convertList(node, degradations, acceptedCodeLanguages, attachments));
       continue;
     }
 
@@ -253,7 +260,7 @@ function convertBlockNodes(
       continue;
     }
 
-    blocks.push(...convertBlockNodes(node.children, degradations, acceptedCodeLanguages));
+    blocks.push(...convertBlockNodes(node.children, degradations, acceptedCodeLanguages, attachments));
   }
 
   blocks.push(...flushParagraph(textBuffer));
@@ -263,13 +270,45 @@ function convertBlockNodes(
 function convertParagraphNode(
   node: ConfluenceStorageElement,
   degradations: Degradation[],
-  acceptedCodeLanguages: ReadonlySet<string>
+  acceptedCodeLanguages: ReadonlySet<string>,
+  attachments: readonly ConfluenceAttachmentReference[] = []
 ): NotionBlock[] {
   if (!node.children.some((child) => child.type === 'element' && isAssetPlaceholderElement(child))) {
     return flushParagraph(node.children);
   }
 
-  return convertBlockNodes(node.children, degradations, acceptedCodeLanguages);
+  return convertMixedInlineAssetNodes(node.children, degradations, acceptedCodeLanguages, attachments);
+}
+
+function convertMixedInlineAssetNodes(
+  nodes: ConfluenceStorageNode[],
+  degradations: Degradation[],
+  acceptedCodeLanguages: ReadonlySet<string>,
+  attachments: readonly ConfluenceAttachmentReference[] = []
+): NotionBlock[] {
+  const blocks: NotionBlock[] = [];
+  let textBuffer: ConfluenceStorageNode[] = [];
+
+  for (const child of nodes) {
+    if (child.type === 'element' && isAssetPlaceholderElement(child)) {
+      blocks.push(...flushParagraph(textBuffer));
+      textBuffer = [];
+      blocks.push(createAssetPlaceholderBlock(child, attachments));
+      continue;
+    }
+
+    if (child.type === 'element' && !isInlineElement(child)) {
+      blocks.push(...flushParagraph(textBuffer));
+      textBuffer = [];
+      blocks.push(...convertBlockNodes([child], degradations, acceptedCodeLanguages, attachments));
+      continue;
+    }
+
+    textBuffer.push(child);
+  }
+
+  blocks.push(...flushParagraph(textBuffer));
+  return blocks;
 }
 
 function flushParagraph(nodes: ConfluenceStorageNode[]): NotionParagraphBlock[] {
@@ -306,12 +345,13 @@ function createHeadingBlock(node: ConfluenceStorageElement): NotionHeadingBlock 
 function convertList(
   node: ConfluenceStorageElement,
   degradations: Degradation[],
-  acceptedCodeLanguages: ReadonlySet<string>
+  acceptedCodeLanguages: ReadonlySet<string>,
+  attachments: readonly ConfluenceAttachmentReference[] = []
 ): NotionBlock[] {
   return elementChildren(node)
     .filter((child) => child.localName === 'li')
     .map((item) =>
-      convertListItem(item, node.localName === 'ol' ? 'numbered_list_item' : 'bulleted_list_item', degradations, acceptedCodeLanguages)
+      convertListItem(item, node.localName === 'ol' ? 'numbered_list_item' : 'bulleted_list_item', degradations, acceptedCodeLanguages, attachments)
     );
 }
 
@@ -319,14 +359,15 @@ function convertListItem(
   item: ConfluenceStorageElement,
   type: 'bulleted_list_item' | 'numbered_list_item',
   degradations: Degradation[],
-  acceptedCodeLanguages: ReadonlySet<string>
+  acceptedCodeLanguages: ReadonlySet<string>,
+  attachments: readonly ConfluenceAttachmentReference[] = []
 ): NotionBulletedListItemBlock | NotionNumberedListItemBlock {
   const inlineChildren: ConfluenceStorageNode[] = [];
   const nestedBlocks: NotionBlock[] = [];
 
   for (const child of item.children) {
     if (child.type === 'element' && (child.localName === 'ul' || child.localName === 'ol')) {
-      nestedBlocks.push(...convertList(child, degradations, acceptedCodeLanguages));
+      nestedBlocks.push(...convertList(child, degradations, acceptedCodeLanguages, attachments));
       continue;
     }
     inlineChildren.push(child);
@@ -355,7 +396,8 @@ function convertListItem(
 function convertMacro(
   node: ConfluenceStorageElement,
   degradations: Degradation[],
-  acceptedCodeLanguages: ReadonlySet<string>
+  acceptedCodeLanguages: ReadonlySet<string>,
+  attachments: readonly ConfluenceAttachmentReference[] = []
 ): NotionBlock {
   const macroName = macroNameFor(node);
 
@@ -374,7 +416,7 @@ function convertMacro(
   }
 
   if (macroName === 'expand') {
-    const children = convertBlockNodes(richTextBodyChildren(node), degradations, acceptedCodeLanguages);
+    const children = convertBlockNodes(richTextBodyChildren(node), degradations, acceptedCodeLanguages, attachments);
     return {
       object: 'block',
       type: 'toggle',
@@ -593,21 +635,21 @@ function cleanAnnotations(annotations: NotionTextAnnotations): NotionTextAnnotat
   return clean;
 }
 
-function createAssetPlaceholderBlock(node: ConfluenceStorageElement): NotionAssetPlaceholderBlock {
+function createAssetPlaceholderBlock(node: ConfluenceStorageElement, attachments: readonly ConfluenceAttachmentReference[] = []): NotionAssetPlaceholderBlock {
   return {
     object: 'block',
     type: 'asset_placeholder',
     asset_placeholder: {
-      sourceUrl: assetPlaceholderSourceUrl(node) ?? '',
+      sourceUrl: assetPlaceholderSourceUrl(node, attachments) ?? '',
       kind: isDrawioMacro(node) ? 'drawio' : 'image'
     }
   };
 }
 
-function assetPlaceholderSourceUrl(node: ConfluenceStorageElement): string | undefined {
+function assetPlaceholderSourceUrl(node: ConfluenceStorageElement, attachments: readonly ConfluenceAttachmentReference[] = []): string | undefined {
   if (node.namespacePrefix === 'ac' && node.localName === 'image') {
     const resource = elementChildren(node).find((child) => child.namespacePrefix === 'ri' && (child.localName === 'url' || child.localName === 'attachment'));
-    return resource ? resourceUrl(resource) : undefined;
+    return resource ? resourceUrl(resource, attachments) : undefined;
   }
 
   return firstMacroParameter(node, ['previewUrl', 'renderUrl', 'imageUrl', 'url']);
@@ -643,11 +685,12 @@ function firstMacroParameter(node: ConfluenceStorageElement, names: string[]): s
   return undefined;
 }
 
-function resourceUrl(resource: ConfluenceStorageElement): string | undefined {
+function resourceUrl(resource: ConfluenceStorageElement, attachments: readonly ConfluenceAttachmentReference[] = []): string | undefined {
   if (resource.localName === 'url') {
     return attributeValue(resource, 'value') ?? attributeValue(resource, 'url');
   }
-  return attributeValue(resource, 'filename');
+  const filename = attributeValue(resource, 'filename');
+  return attachments.find((attachment) => attachment.filename === filename)?.downloadUrl ?? filename;
 }
 
 function elementChildren(node: ConfluenceStorageElement): ConfluenceStorageElement[] {

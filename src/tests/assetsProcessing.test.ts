@@ -168,40 +168,18 @@ describe('processConfluenceAssets', () => {
     });
   });
 
-  it('validates completed file upload expiry at attach time boundaries', async () => {
-    async function processWithExpiry(expiresAt?: string) {
-      return processConfluenceAssets([asset()], {
-        fetcher: vi.fn(async () => new Response(new Blob(['image-bytes'], { type: 'image/png' }), { status: 200 })),
-        createFileUpload: vi.fn(async () => ({ id: 'upload-1', uploadUrl: 'https://upload.notion.test/file' })),
-        uploadFileContents: vi.fn(async () => undefined),
-        completeFileUpload: vi.fn(async () => ({ fileUploadId: 'upload-1', ...(expiresAt ? { expiresAt } : {}) })),
-        now: () => new Date('2026-05-18T18:00:00.000Z')
-      });
-    }
+  it('keeps completed file upload refs for final attach-time expiry validation', async () => {
+    const result = await processConfluenceAssets([asset()], {
+      fetcher: vi.fn(async () => new Response(new Blob(['image-bytes'], { type: 'image/png' }), { status: 200 })),
+      createFileUpload: vi.fn(async () => ({ id: 'upload-1', uploadUrl: 'https://upload.notion.test/file' })),
+      uploadFileContents: vi.fn(async () => undefined),
+      completeFileUpload: vi.fn(async () => ({ fileUploadId: 'upload-1', expiresAt: '2026-05-18T18:00:00.000Z' })),
+      now: () => new Date('2026-05-18T18:00:00.000Z')
+    });
 
-    await expect(processWithExpiry()).resolves.toMatchObject({
-      assets: [expect.objectContaining({ status: 'uploaded', notionFileRef: expect.objectContaining({ fileUploadId: 'upload-1' }) })],
+    expect(result).toMatchObject({
+      assets: [expect.objectContaining({ status: 'uploaded', notionFileRef: expect.objectContaining({ fileUploadId: 'upload-1', expiresAt: '2026-05-18T18:00:00.000Z' }) })],
       degradations: []
     });
-    await expect(processWithExpiry('2026-05-18T18:00:00.001Z')).resolves.toMatchObject({
-      assets: [expect.objectContaining({ status: 'uploaded', notionFileRef: expect.objectContaining({ fileUploadId: 'upload-1' }) })],
-      degradations: []
-    });
-
-    const expired = await processWithExpiry('2026-05-18T17:59:59.999Z');
-    expect(expired.assets[0]).toMatchObject({
-      status: 'failed',
-      notionFileRef: { externalUrl: 'https://wiki.example.com/download/attachments/123/image.png' },
-      degradation: expect.objectContaining({ type: 'asset-attach-window-expired', severity: 'warning' })
-    });
-    expect(expired.degradations).toHaveLength(1);
-
-    const equalityAtNow = await processWithExpiry('2026-05-18T18:00:00.000Z');
-    expect(equalityAtNow.assets[0]).toMatchObject({
-      status: 'failed',
-      notionFileRef: { externalUrl: 'https://wiki.example.com/download/attachments/123/image.png' },
-      degradation: expect.objectContaining({ type: 'asset-attach-window-expired', severity: 'warning' })
-    });
-    expect(equalityAtNow.degradations).toHaveLength(1);
   });
 });

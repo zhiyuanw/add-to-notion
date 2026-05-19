@@ -18,16 +18,20 @@ describe('content-side Confluence page identity extraction', () => {
     expect(extractConfluencePageIdentity()).toEqual({ domPageId: '24680' });
   });
 
-  it('extracts page ID from Confluence bootstrap data when DOM metadata is unavailable', () => {
-    Object.assign(window, {
-      AJS: {
-        Meta: {
-          get: vi.fn((key: string) => (key === 'page-id' ? '13579' : undefined))
-        }
-      }
-    });
+  it('extracts page ID from Confluence bootstrap script data when DOM metadata is unavailable', () => {
+    document.body.innerHTML = `<script>
+      AJS.Meta.set('page-id', '13579');
+    </script>`;
 
     expect(extractConfluencePageIdentity()).toEqual({ bootstrapPageId: '13579' });
+  });
+
+  it('extracts page ID from Confluence bootstrap JSON when DOM metadata is unavailable', () => {
+    document.body.innerHTML = `<script>
+      WRM.data.claim('com.atlassian.confluence.plugins.confluence-frontend:metadata', {"content-id":"86420"});
+    </script>`;
+
+    expect(extractConfluencePageIdentity()).toEqual({ bootstrapPageId: '86420' });
   });
 
   it('returns no page ID when display-page metadata is absent', () => {

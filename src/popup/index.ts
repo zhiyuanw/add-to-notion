@@ -2,7 +2,7 @@ import { detectConfluencePage } from '../confluence';
 import type { ConfluencePageIdentity } from '../content/pageIdentity';
 import type { ClipTask, ClipTaskStatus, NotionTarget, TerminalClipTaskSummary } from '../shared/domain';
 import { isTerminalClipTaskStatus } from '../shared/domain';
-import { readConfluenceBaseUrl, readLocalStorageValue, storageKeys } from '../shared/storage';
+import { readConfluenceBaseUrl, getLocalStorageChangeValue, readLocalStorageValue, storageKeys } from '../shared/storage';
 
 export interface PopupPageOptions {
   queryCurrentTab?: () => Promise<PopupTab | undefined>;
@@ -60,13 +60,13 @@ export async function mountPopupPage(root: HTMLElement, options: PopupPageOption
     let shouldRender = false;
 
     if (storageKeys.activeClipTaskLock in changes) {
-      const activeTask = changes[storageKeys.activeClipTaskLock].newValue as ClipTask | undefined;
+      const activeTask = getLocalStorageChangeValue(changes, storageKeys.activeClipTaskLock);
       state.activeTask = activeTask && !isTerminalClipTaskStatus(activeTask.status) ? activeTask : undefined;
       shouldRender = true;
     }
 
     if (storageKeys.lastTerminalClipTaskSummary in changes) {
-      state.lastSummary = changes[storageKeys.lastTerminalClipTaskSummary].newValue as TerminalClipTaskSummary | undefined;
+      state.lastSummary = getLocalStorageChangeValue(changes, storageKeys.lastTerminalClipTaskSummary);
       shouldRender = true;
     }
 

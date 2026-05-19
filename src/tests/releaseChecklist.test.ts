@@ -130,9 +130,10 @@ beforeEach(() => {
 });
 
 describe('V1 release checklist verification', () => {
-  it('declares only the runtime permissions and optional host access needed for release', () => {
+  it('declares only runtime permissions plus the MV3 optional host candidate envelope needed for release', () => {
     expect(manifest.permissions).toEqual(expect.arrayContaining(['identity', 'storage', 'notifications', 'tabs', 'activeTab', 'scripting']));
     expect(manifest.permissions).not.toContain('cookies');
+    expect('host_permissions' in manifest).toBe(false);
     expect(manifest.optional_host_permissions).toEqual(['http://*/*', 'https://*/*']);
     expect(manifest.optional_host_permissions).not.toContain('<all_urls>');
   });

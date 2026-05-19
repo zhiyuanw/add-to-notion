@@ -182,6 +182,7 @@ flowchart TD
 - Confluence base URL MUST NOT contain query string, fragment, username, password, or trailing `/` after normalization.
 - Confluence base URL normalization MUST preserve the context path when present.
 - 配置 base URL 后，扩展 MUST 通过 `chrome.permissions.request` 请求对应 origin 的 optional host permission。
+- Because Chrome MV3 requires runtime-requestable host permissions to be predeclared in the manifest, `optional_host_permissions` MAY declare only `http://*/*` and `https://*/*` as candidate host patterns; actual runtime `chrome.permissions.request` calls MUST request only the configured Confluence origin.
 - 用户修改 Confluence base URL 时，扩展 MUST 请求新 origin 的 host permission。
 - 用户修改 Confluence base URL 后，扩展 MUST NOT 使用旧 normalized base URL 或旧 origin 进行页面检测、REST fetch 或 asset download。
 - 用户修改 Confluence base URL 后，扩展 MUST NOT 主动移除旧 origin host permission。
@@ -471,9 +472,10 @@ Converter MUST 直接生成 Notion blocks。Markdown MUST NOT 作为主中间格
 - Notion tokens MUST 只保存在 `chrome.storage.local`。
 - Content scripts MUST NOT 接收 Notion tokens。
 - Confluence cookies MUST NOT 被扩展读取或存储；只允许浏览器通过 `credentials: 'include'` 自动携带。
-- 扩展 MUST 只请求用户配置的 Confluence origin 权限；页面检测和 REST content fetch 必须用 normalized base URL path 在代码中限制实际访问范围。
+- 扩展 runtime MUST 只请求用户配置的 Confluence origin 权限；页面检测和 REST content fetch 必须用 normalized base URL path 在代码中限制实际访问范围。
 - Asset Handler MAY 下载 same-origin 且由 storage XML 或 attachment metadata 引用的附件、图片和 Draw.io 渲染图，即使资源路径在 normalized base URL path 之外。
 - 扩展 MUST NOT 请求 `<all_urls>`。
+- Manifest `optional_host_permissions` MUST NOT include `<all_urls>` and MUST NOT grant host access by itself; broad `http://*/*` and `https://*/*` entries are allowed only as MV3 candidate patterns for runtime optional permission requests.
 - 扩展 MUST NOT 请求 `cookies` permission。
 - 扩展 MUST NOT 执行 Confluence 页面中的脚本、HTML event handler、SVG script 或宏内容。
 - Parser MUST 禁用 XML external entity 和外部资源加载。

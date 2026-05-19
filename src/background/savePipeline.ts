@@ -98,7 +98,7 @@ export function createSaveConfluencePageOperation(
 
       await context.updateStatus('converting', 'Converting content to Notion blocks');
       logger.stageStart('converting');
-      const converted = convertConfluenceStorageToNotionBlocks(parsed.document);
+      const converted = convertConfluenceStorageToNotionBlocks(parsed.document, { attachments: fetched.pageData.attachments });
       state.warnings.push(...converted.degradations);
       logger.macroCountByType(countMacrosByType(parsed.document));
       logger.stageEnd('converting', { blockCount: converted.blocks.length, degradationCount: converted.degradations.length });
@@ -113,7 +113,9 @@ export function createSaveConfluencePageOperation(
       state.warnings.push(...processedAssets.degradations);
       logger.stageEnd('uploading_assets');
 
-      const contentBlocks = replaceAssetPlaceholders(converted.blocks, processedAssets.assets, fetched.pageData.pageRef.baseUrl);
+      const content = replaceAssetPlaceholders(converted.blocks, processedAssets.assets, fetched.pageData.pageRef.baseUrl, options.now);
+      state.warnings.push(...content.attachTimeDegradations);
+      const contentBlocks = content.blocks;
       state.blockCount = contentBlocks.length;
 
       await context.updateStatus('writing', 'Writing Notion page');
@@ -152,59 +154,80 @@ export function createSaveConfluencePageOperation(
   };
 }
 
-function replaceAssetPlaceholders(blocks: NotionBlock[], assets: ProcessedConfluenceAsset[], baseUrl: string): NotionBlock[] {
+interface AssetPlaceholderReplacementResult {
+  blocks: NotionBlock[];
+  attachTimeDegradations: Degradation[];
+}
+
+function replaceAssetPlaceholders(
+  blocks: NotionBlock[],
+  assets: ProcessedConfluenceAsset[],
+  baseUrl: string,
+  now?: () => Date
+): AssetPlaceholderReplacementResult {
   const assetsByKey = new Map(assets.map((asset) => [assetKey(asset.kind, asset.sourceUrl), asset]));
   const replacedBlocks: NotionBlock[] = [];
+  const attachTimeDegradations: Degradation[] = [];
 
   for (const block of blocks) {
     if (block.type === 'asset_placeholder') {
       const resolvedSourceUrl = resolveUrl(block.asset_placeholder.sourceUrl, baseUrl);
       const asset = resolvedSourceUrl ? assetsByKey.get(assetKey(block.asset_placeholder.kind, resolvedSourceUrl)) : undefined;
       if (asset) {
-        replacedBlocks.push(...renderProcessedAssetsToNotionBlocks([asset]).blocks);
+        const rendered = renderProcessedAssetsToNotionBlocks([asset], { now });
+        replacedBlocks.push(...rendered.blocks);
+        attachTimeDegradations.push(...rendered.attachTimeDegradations);
       }
       continue;
     }
 
     if (block.type === 'bulleted_list_item' && block.bulleted_list_item.children) {
+      const replacedChildren = replaceAssetPlaceholders(block.bulleted_list_item.children, assets, baseUrl, now);
+      attachTimeDegradations.push(...replacedChildren.attachTimeDegradations);
       replacedBlocks.push({
         ...block,
         bulleted_list_item: {
           ...block.bulleted_list_item,
-          children: replaceAssetPlaceholders(block.bulleted_list_item.children, assets, baseUrl)
+          children: replacedChildren.blocks
         }
       });
       continue;
     }
 
     if (block.type === 'numbered_list_item' && block.numbered_list_item.children) {
+      const replacedChildren = replaceAssetPlaceholders(block.numbered_list_item.children, assets, baseUrl, now);
+      attachTimeDegradations.push(...replacedChildren.attachTimeDegradations);
       replacedBlocks.push({
         ...block,
         numbered_list_item: {
           ...block.numbered_list_item,
-          children: replaceAssetPlaceholders(block.numbered_list_item.children, assets, baseUrl)
+          children: replacedChildren.blocks
         }
       });
       continue;
     }
 
     if (block.type === 'toggle' && block.toggle.children) {
+      const replacedChildren = replaceAssetPlaceholders(block.toggle.children, assets, baseUrl, now);
+      attachTimeDegradations.push(...replacedChildren.attachTimeDegradations);
       replacedBlocks.push({
         ...block,
         toggle: {
           ...block.toggle,
-          children: replaceAssetPlaceholders(block.toggle.children, assets, baseUrl)
+          children: replacedChildren.blocks
         }
       });
       continue;
     }
 
     if (block.type === 'callout' && block.callout.children) {
+      const replacedChildren = replaceAssetPlaceholders(block.callout.children, assets, baseUrl, now);
+      attachTimeDegradations.push(...replacedChildren.attachTimeDegradations);
       replacedBlocks.push({
         ...block,
         callout: {
           ...block.callout,
-          children: replaceAssetPlaceholders(block.callout.children, assets, baseUrl)
+          children: replacedChildren.blocks
         }
       });
       continue;
@@ -213,7 +236,7 @@ function replaceAssetPlaceholders(blocks: NotionBlock[], assets: ProcessedConflu
     replacedBlocks.push(block);
   }
 
-  return replacedBlocks;
+  return { blocks: replacedBlocks, attachTimeDegradations };
 }
 
 function assetKey(kind: AssetKind, sourceUrl: string): string {

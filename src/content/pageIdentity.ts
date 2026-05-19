@@ -17,21 +17,9 @@ type RuntimeLike = {
   };
 };
 
-type AjsMeta = {
-  Meta?: {
-    get?: (key: string) => unknown;
-  };
-};
-
 let handlerRegistered = false;
 
-declare global {
-  interface Window {
-    AJS?: AjsMeta;
-  }
-}
-
-export function extractConfluencePageIdentity(doc: Document = document, win: Window = window): ConfluencePageIdentity {
+export function extractConfluencePageIdentity(doc: Document = document): ConfluencePageIdentity {
   const domPageId = firstNonEmpty(
     doc.querySelector<HTMLMetaElement>('meta[name="ajs-page-id"]')?.content,
     doc.querySelector<HTMLElement>('[data-page-id]')?.dataset.pageId,
@@ -42,7 +30,7 @@ export function extractConfluencePageIdentity(doc: Document = document, win: Win
     return { domPageId };
   }
 
-  const bootstrapPageId = firstNonEmpty(readAjsMeta(win, 'page-id'), readAjsMeta(win, 'content-id'));
+  const bootstrapPageId = findBootstrapPageId(doc);
   return bootstrapPageId ? { bootstrapPageId } : {};
 }
 
@@ -75,9 +63,41 @@ function isPageIdentityRequest(message: unknown): message is ConfluencePageIdent
   );
 }
 
-function readAjsMeta(win: Window, key: string): string | undefined {
-  const value = win.AJS?.Meta?.get?.(key);
-  return typeof value === 'string' ? value : undefined;
+function findBootstrapPageId(doc: Document): string | undefined {
+  for (const script of Array.from(doc.scripts)) {
+    const pageId = extractBootstrapPageIdFromScript(script.textContent ?? '');
+
+    if (pageId) {
+      return pageId;
+    }
+  }
+
+  return undefined;
+}
+
+function extractBootstrapPageIdFromScript(source: string): string | undefined {
+  return firstNonEmpty(
+    extractAjsMetaSetCall(source, 'page-id'),
+    extractAjsMetaSetCall(source, 'content-id'),
+    extractAjsMetaAssignment(source, 'page-id'),
+    extractAjsMetaAssignment(source, 'content-id')
+  );
+}
+
+function extractAjsMetaAssignment(source: string, key: string): string | undefined {
+  const escapedKey = escapeRegExp(key);
+  const pattern = new RegExp(String.raw`["']${escapedKey}["']\s*:\s*["'](\d+)["']`, 'u');
+  return pattern.exec(source)?.[1];
+}
+
+function extractAjsMetaSetCall(source: string, key: string): string | undefined {
+  const escapedKey = escapeRegExp(key);
+  const pattern = new RegExp(String.raw`AJS\.Meta\.set\(\s*["']${escapedKey}["']\s*,\s*["'](\d+)["']`, 'u');
+  return pattern.exec(source)?.[1];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
 function firstNonEmpty(...values: Array<string | undefined>): string | undefined {

@@ -14,12 +14,27 @@ export type LocalStorageValueByKey = {
 
 export type LocalStorageKey = keyof LocalStorageValueByKey;
 
+export type LocalStorageChangeByKey = Partial<{
+  [Key in LocalStorageKey]: chrome.storage.StorageChange & {
+    newValue?: LocalStorageValueByKey[Key];
+    oldValue?: LocalStorageValueByKey[Key];
+  };
+}>;
+
 const notionLogoutStorageKeys = [
   storageKeys.notionAuthState,
   storageKeys.notionWorkspace,
   storageKeys.notionDefaultTarget,
   storageKeys.lastTerminalClipTaskSummary
 ] as const satisfies readonly LocalStorageKey[];
+
+export function getLocalStorageChangeValue<Key extends LocalStorageKey>(
+  changes: Record<string, chrome.storage.StorageChange>,
+  key: Key
+): LocalStorageValueByKey[Key] | undefined {
+  const typedChanges = changes as LocalStorageChangeByKey;
+  return typedChanges[key]?.newValue;
+}
 
 export async function readLocalStorageValue<Key extends LocalStorageKey>(
   key: Key

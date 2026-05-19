@@ -224,6 +224,75 @@ describe('Confluence to Notion save pipeline', () => {
     ]);
   });
 
+  it('preserves mixed text-image paragraph order and resolves attachment-backed image placeholders by download URL', async () => {
+    await seedConfiguredState();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/rest/api/content/123')) {
+        return jsonResponse({
+          title: 'Inline Attachment Image',
+          body: {
+            storage: {
+              value: '<p>Before <ac:image><ri:attachment ri:filename="diagram.png" /></ac:image> after</p>'
+            }
+          },
+          metadata: { labels: { results: [] } },
+          children: {
+            attachment: {
+              results: [
+                {
+                  id: 'attachment-1',
+                  title: 'diagram.png',
+                  metadata: { mediaType: 'image/png' },
+                  extensions: { fileSize: 1024 },
+                  _links: { download: '/download/attachments/123/diagram.png?version=1&modificationDate=1&api=v2' }
+                }
+              ]
+            }
+          }
+        });
+      }
+      if (url.includes('/download/attachments/123/diagram.png')) {
+        return textResponse('image-bytes', 200, 'image/png');
+      }
+      if (url === 'https://api.notion.com/v1/file_uploads') {
+        const body = JSON.parse(String(init?.body));
+        expect(body.filename).toBe('diagram.png');
+        return jsonResponse({ id: 'upload-diagram', upload_url: 'https://uploads.notion.test/diagram' });
+      }
+      if (url === 'https://uploads.notion.test/diagram') {
+        return textResponse('', 200);
+      }
+      if (url.endsWith('/complete')) {
+        return jsonResponse({ id: 'upload-diagram' });
+      }
+      if (url === 'https://api.notion.com/v1/pages') {
+        return jsonResponse({ id: 'notion-page-1', url: 'https://notion.so/notion-page-1' });
+      }
+      if (url === 'https://api.notion.com/v1/blocks/notion-page-1/children') {
+        return jsonResponse({ object: 'list' });
+      }
+      return jsonResponse({});
+    });
+
+    const result = await createSaveConfluencePageOperation({
+      pageUrl: 'https://wiki.example.com/confluence/pages/viewpage.action?pageId=123',
+      fetcher,
+      notionConfig: testConfig,
+      now: () => now
+    })(makeContext());
+
+    expect(result).toMatchObject({ status: 'succeeded', result: { blockCount: 4, assetCount: 1, warningCount: 0 } });
+    const appendBody = appendBodyFor(fetcher, 'notion-page-1');
+    expect(appendBody.children.map((block: Record<string, any>) => (block.type === 'image' ? block.image.file_upload.id : richTextContent(block)))).toEqual([
+      'Confluence metadata',
+      'Before ',
+      'upload-diagram',
+      ' after'
+    ]);
+    expect(fetcher).toHaveBeenCalledWith('https://wiki.example.com/download/attachments/123/diagram.png?version=1&modificationDate=1&api=v2', expect.objectContaining({ credentials: 'include' }));
+  });
+
   it('keeps failed image upload fallback links at original positions without per-image callouts', async () => {
     await seedConfiguredState();
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
@@ -273,6 +342,59 @@ describe('Confluence to Notion save pipeline', () => {
     ]);
     expect(appendBody.children[2].paragraph.rich_text[0].text.link.url).toBe('https://wiki.example.com/confluence/download/attachments/123/broken.png');
     expect(JSON.stringify(appendBody.children)).not.toContain('callout');
+  });
+
+  it('validates uploaded asset expiry during final rendering before writing Notion blocks', async () => {
+    await seedConfiguredState();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/rest/api/content/123')) {
+        return jsonResponse({
+          title: 'Expired Upload',
+          body: { storage: { value: '<p>Before</p><ac:image><ri:url ri:value="/confluence/download/attachments/123/expired.png" /></ac:image><p>After</p>' } },
+          metadata: { labels: { results: [] } },
+          children: { attachment: { results: [] } }
+        });
+      }
+      if (url.includes('/download/attachments/123/')) {
+        return textResponse('image-bytes', 200, 'image/png');
+      }
+      if (url === 'https://api.notion.com/v1/file_uploads') {
+        return jsonResponse({ id: 'upload-expired', upload_url: 'https://uploads.notion.test/expired' });
+      }
+      if (url === 'https://uploads.notion.test/expired') {
+        return textResponse('', 200);
+      }
+      if (url === 'https://api.notion.com/v1/file_uploads/upload-expired/complete') {
+        return jsonResponse({ id: 'upload-expired', expires_at: now.toISOString() });
+      }
+      if (url === 'https://api.notion.com/v1/pages') {
+        return jsonResponse({ id: 'notion-page-1', url: 'https://notion.so/notion-page-1' });
+      }
+      if (url === 'https://api.notion.com/v1/blocks/notion-page-1/children') {
+        expect(JSON.stringify(init?.body)).not.toContain('file_upload');
+        return jsonResponse({ object: 'list' });
+      }
+      return jsonResponse({});
+    });
+
+    const result = await createSaveConfluencePageOperation({
+      pageUrl: 'https://wiki.example.com/confluence/pages/viewpage.action?pageId=123',
+      fetcher,
+      notionConfig: testConfig,
+      now: () => now
+    })(makeContext());
+
+    expect(result).toMatchObject({ status: 'succeeded', result: { blockCount: 4, assetCount: 1, warningCount: 1 } });
+    expect(result.warnings?.map((warning) => warning.type)).toEqual(['asset-attach-window-expired']);
+    const appendBody = appendBodyFor(fetcher, 'notion-page-1');
+    expect(appendBody.children.map((block: Record<string, any>) => richTextContent(block))).toEqual([
+      'Confluence metadata',
+      'Before',
+      'expired.png',
+      'After'
+    ]);
+    expect(appendBody.children[2].paragraph.rich_text[0].text.link.url).toBe('https://wiki.example.com/confluence/download/attachments/123/expired.png');
   });
 
   it('fails early when required configuration is missing', async () => {

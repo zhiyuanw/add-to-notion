@@ -53,6 +53,11 @@ export interface ConfluenceAssetRenderingResult {
   blocks: NotionAssetBlock[];
   warningCount: number;
   degradations: Degradation[];
+  attachTimeDegradations: Degradation[];
+}
+
+export interface ConfluenceAssetRenderingOptions {
+  now?: () => Date;
 }
 
 export interface NotionFileUploadCreateRequest {
@@ -104,7 +109,7 @@ export function extractConfluenceAssets(
     return { assets: [] };
   }
 
-  const candidates = [...storageImageCandidates(document), ...drawioCandidates(document), ...attachmentCandidates(pageData.attachments)];
+  const candidates = [...storageImageCandidates(document, pageData.attachments), ...drawioCandidates(document), ...attachmentCandidates(pageData.attachments)];
   const assets = candidates.flatMap((candidate) => toExtractedAsset(candidate, baseUrl.normalizedUrl, baseUrl.origin, baseUrl.contextPath));
 
   return { assets: dedupeAssets(assets) };
@@ -140,16 +145,30 @@ export async function processConfluenceAssets(
   };
 }
 
-export function renderProcessedAssetsToNotionBlocks(assets: ProcessedConfluenceAsset[]): ConfluenceAssetRenderingResult {
-  const blocks = assets.flatMap(renderProcessedAssetToNotionBlocks);
-  const degradations = assets.flatMap((asset) => (asset.degradation ? [asset.degradation] : []));
-  const warningCount = assets.filter((asset) => asset.status === 'skipped' || asset.status === 'failed' || asset.degradation?.severity === 'warning').length;
+export function renderProcessedAssetsToNotionBlocks(
+  assets: ProcessedConfluenceAsset[],
+  options: ConfluenceAssetRenderingOptions = {}
+): ConfluenceAssetRenderingResult {
+  const now = options.now?.() ?? new Date();
+  const renderedAssets = assets.map((asset) => renderableAssetAtAttachTime(asset, now));
+  const blocks = renderedAssets.flatMap(renderProcessedAssetToNotionBlocks);
+  const degradations = renderedAssets.flatMap((asset) => (asset.degradation ? [asset.degradation] : []));
+  const warningCount = renderedAssets.filter((asset) => asset.status === 'skipped' || asset.status === 'failed' || asset.degradation?.severity === 'warning').length;
 
   return {
     blocks,
     warningCount,
-    degradations
+    degradations,
+    attachTimeDegradations: renderedAssets.flatMap((asset, index) => (asset === assets[index] || !asset.degradation ? [] : [asset.degradation]))
   };
+}
+
+function renderableAssetAtAttachTime(asset: ProcessedConfluenceAsset, now: Date): ProcessedConfluenceAsset {
+  if (asset.status !== 'uploaded' || !asset.notionFileRef?.fileUploadId || canAttachAt(asset.notionFileRef.expiresAt, now)) {
+    return asset;
+  }
+
+  return degradeAsset(asset, 'failed', 'asset-attach-window-expired', `Notion file upload expired before it could be attached: ${asset.sourceUrl}`);
 }
 
 function renderProcessedAssetToNotionBlocks(asset: ProcessedConfluenceAsset): NotionAssetBlock[] {
@@ -271,10 +290,6 @@ async function processSingleAsset(
     await uploadFileContents(upload.uploadUrl, file, metadata, options);
 
     const completed = await completeFileUpload(upload.id, options);
-
-    if (!canAttachAt(completed.expiresAt, options.now?.() ?? new Date())) {
-      return degradeAsset(asset, 'failed', 'asset-attach-window-expired', `Notion file upload expired before it could be attached: ${asset.sourceUrl}`);
-    }
 
     return {
       ...asset,
@@ -412,7 +427,7 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-function storageImageCandidates(document: ConfluenceStorageDocument): AssetCandidate[] {
+function storageImageCandidates(document: ConfluenceStorageDocument, attachments: readonly ConfluenceAttachment[] = []): AssetCandidate[] {
   return collectElements(document.children)
     .filter((element) => element.namespacePrefix === 'ac' && element.localName === 'image')
     .flatMap((image) => {
@@ -420,7 +435,7 @@ function storageImageCandidates(document: ConfluenceStorageDocument): AssetCandi
       if (!resource) {
         return [];
       }
-      const sourceUrl = resourceUrl(resource);
+      const sourceUrl = resourceUrl(resource, attachments);
       if (!sourceUrl) {
         return [];
       }
@@ -556,11 +571,12 @@ function attributeValue(element: ConfluenceStorageElement, localName: string): s
   return element.attributes.find((attribute) => attribute.localName === localName)?.value;
 }
 
-function resourceUrl(resource: ConfluenceStorageElement): string | undefined {
+function resourceUrl(resource: ConfluenceStorageElement, attachments: readonly ConfluenceAttachment[] = []): string | undefined {
   if (resource.localName === 'url') {
     return attributeValue(resource, 'value') ?? attributeValue(resource, 'url');
   }
-  return attributeValue(resource, 'filename');
+  const filename = attributeValue(resource, 'filename');
+  return attachments.find((attachment) => attachment.filename === filename)?.downloadUrl ?? filename;
 }
 
 function filenameFromResource(resource: ConfluenceStorageElement): string | undefined {

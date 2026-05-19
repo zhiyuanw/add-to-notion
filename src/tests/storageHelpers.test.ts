@@ -4,6 +4,7 @@ import type { ClipTask } from '../shared/domain/clipTask';
 import type { NotionTarget } from '../shared/domain/models';
 import {
   clearNotionSessionState,
+  getLocalStorageChangeValue,
   readConfluenceBaseUrl,
   readLocalStorageValue,
   readNotionAuthState,
@@ -120,6 +121,23 @@ describe('chrome.storage.local helpers', () => {
       'query-not-allowed'
     );
     await expect(readConfluenceBaseUrl()).resolves.toBeUndefined();
+  });
+
+  it('reads typed new values from chrome.storage.local change events', () => {
+    const activeTask: ClipTask = {
+      taskId: 'task-1',
+      status: 'fetching',
+      progress: { stage: 'fetching' },
+      warnings: [],
+      startedAt: '2026-05-18T17:00:00.000Z',
+      updatedAt: '2026-05-18T17:00:00.000Z'
+    };
+    const changes: Record<string, chrome.storage.StorageChange> = {
+      [storageKeys.activeClipTaskLock]: { newValue: activeTask }
+    };
+
+    expect(getLocalStorageChangeValue(changes, storageKeys.activeClipTaskLock)).toEqual(activeTask);
+    expect(getLocalStorageChangeValue(changes, storageKeys.lastTerminalClipTaskSummary)).toBeUndefined();
   });
 
   it('clears Notion session state on logout while preserving Confluence configuration', async () => {

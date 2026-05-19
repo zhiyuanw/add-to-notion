@@ -108,6 +108,42 @@ describe('renderProcessedAssetsToNotionBlocks', () => {
     expect(result.warningCount).toBe(1);
   });
 
+  it('validates completed file upload expiry at final render attach-time boundaries', () => {
+    function renderWithExpiry(expiresAt?: string) {
+      return renderProcessedAssetsToNotionBlocks(
+        [asset({ notionFileRef: { fileUploadId: 'upload-1', filename: 'image.png', ...(expiresAt ? { expiresAt } : {}) } })],
+        { now: () => new Date('2026-05-18T18:00:00.000Z') }
+      );
+    }
+
+    expect(renderWithExpiry()).toMatchObject({
+      blocks: [{ type: 'image', image: { type: 'file_upload', file_upload: { id: 'upload-1' } } }],
+      degradations: [],
+      attachTimeDegradations: []
+    });
+    expect(renderWithExpiry('2026-05-18T18:00:00.001Z')).toMatchObject({
+      blocks: [{ type: 'image', image: { type: 'file_upload', file_upload: { id: 'upload-1' } } }],
+      degradations: [],
+      attachTimeDegradations: []
+    });
+
+    const expired = renderWithExpiry('2026-05-18T17:59:59.999Z');
+    expect(expired.blocks).toMatchObject([
+      {
+        type: 'paragraph',
+        paragraph: {
+          rich_text: [{ type: 'text', text: { content: 'image.png', link: { url: 'https://wiki.example.com/download/attachments/123/image.png' } } }]
+        }
+      }
+    ]);
+    expect(expired.degradations).toEqual([expect.objectContaining({ type: 'asset-attach-window-expired', severity: 'warning' })]);
+    expect(expired.attachTimeDegradations).toEqual([expect.objectContaining({ type: 'asset-attach-window-expired', severity: 'warning' })]);
+
+    const equalityAtNow = renderWithExpiry('2026-05-18T18:00:00.000Z');
+    expect(equalityAtNow.blocks[0]).toMatchObject({ type: 'paragraph' });
+    expect(equalityAtNow.degradations).toEqual([expect.objectContaining({ type: 'asset-attach-window-expired', severity: 'warning' })]);
+  });
+
   it('renders Draw.io with rendered image when available and preserves its source link', () => {
     const result = renderProcessedAssetsToNotionBlocks([
       asset({
