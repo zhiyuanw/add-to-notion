@@ -28,6 +28,9 @@ beforeEach(() => {
     runtime: {
       sendMessage
     },
+    scripting: {
+      executeScript: vi.fn(async () => [])
+    },
     storage: {
       local: {
         get: vi.fn(async (keys?: string | string[] | Record<string, unknown> | null) => {
@@ -116,6 +119,59 @@ describe('popup save UI', () => {
 
     expect(sendMessage).toHaveBeenCalledOnce();
     expect(getText('#popup-task-progress')).toBe('Uploading images to Notion…');
+  });
+
+  it('does not request page identity for non-display URLs', async () => {
+    seedConfiguredPage();
+    const requestPageIdentity = vi.fn(async () => ({ domPageId: '24680' }));
+
+    await mountPopupPage(getApp(), { requestPageIdentity });
+    await flushPromises();
+
+    expect(requestPageIdentity).not.toHaveBeenCalled();
+    expect(getText('#popup-page-status')).toBe('Supported Confluence page detected.');
+  });
+
+  it('does not request page identity for display URLs outside the configured base URL', async () => {
+    seedConfiguredPage();
+    queryTabs.mockResolvedValueOnce([{ id: 7, url: 'https://other.example.com/wiki/display/ENG/Project+Plan' }]);
+    const requestPageIdentity = vi.fn(async () => ({ domPageId: '24680' }));
+
+    await mountPopupPage(getApp(), { requestPageIdentity });
+    await flushPromises();
+
+    expect(requestPageIdentity).not.toHaveBeenCalled();
+    expect(getText('#popup-page-status')).toBe('Open a supported configured Confluence page to save.');
+  });
+
+  it('passes extracted display URL page identity to the background save request', async () => {
+    seedConfiguredPage();
+    const displayUrl = 'https://confluence.example.com/wiki/display/ENG/Project+Plan';
+    queryTabs.mockResolvedValueOnce([{ id: 7, url: displayUrl }]);
+    sendMessage.mockResolvedValueOnce(makeTask({ taskId: 'task-started', status: 'detecting' }));
+    const requestPageIdentity = vi.fn(async () => ({ domPageId: '24680' }));
+
+    await mountPopupPage(getApp(), { requestPageIdentity });
+    await flushPromises();
+
+    expect(getText('#popup-page-status')).toBe('Supported Confluence page detected.');
+    getButton('#save-to-notion').click();
+    await flushPromises();
+
+    expect(requestPageIdentity).toHaveBeenCalledWith(7);
+    expect(sendMessage).toHaveBeenCalledWith({ type: 'clip.saveCurrentPage', pageUrl: displayUrl, tabId: 7, domPageId: '24680' });
+  });
+
+  it('shows unsupported guidance for display URLs when page identity is unavailable', async () => {
+    seedConfiguredPage();
+    queryTabs.mockResolvedValueOnce([{ id: 7, url: 'https://confluence.example.com/wiki/display/ENG/Project+Plan' }]);
+    const requestPageIdentity = vi.fn(async () => ({}));
+
+    await mountPopupPage(getApp(), { requestPageIdentity });
+    await flushPromises();
+
+    expect(getText('#popup-page-status')).toBe('Open a supported configured Confluence page to save.');
+    expect(getButton('#save-to-notion').disabled).toBe(true);
   });
 
   it('shows terminal success summary and makes new-page creation clear', async () => {

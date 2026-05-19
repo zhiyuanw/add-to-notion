@@ -1,16 +1,19 @@
 import { detectConfluencePage } from '../confluence';
+import type { ConfluencePageIdentity } from '../content/pageIdentity';
 import type { ClipTask, ClipTaskStatus, NotionTarget, TerminalClipTaskSummary } from '../shared/domain';
 import { isTerminalClipTaskStatus } from '../shared/domain';
 import { readConfluenceBaseUrl, readLocalStorageValue, storageKeys } from '../shared/storage';
 
 export interface PopupPageOptions {
   queryCurrentTab?: () => Promise<PopupTab | undefined>;
+  requestPageIdentity?: (tabId: number) => Promise<ConfluencePageIdentity>;
   sendSaveMessage?: (message: SaveCurrentPageMessage) => Promise<ClipTask>;
 }
 
 interface PopupState {
   currentTab?: PopupTab;
   currentPageSupported: boolean;
+  pageIdentity: ConfluencePageIdentity;
   target?: NotionTarget;
   activeTask?: ClipTask;
   lastSummary?: TerminalClipTaskSummary;
@@ -25,6 +28,8 @@ interface SaveCurrentPageMessage {
   type: 'clip.saveCurrentPage';
   pageUrl: string;
   tabId?: number;
+  domPageId?: string;
+  bootstrapPageId?: string;
 }
 
 const runningStageLabels: Record<ClipTaskStatus, string> = {
@@ -42,7 +47,8 @@ const runningStageLabels: Record<ClipTaskStatus, string> = {
 
 export async function mountPopupPage(root: HTMLElement, options: PopupPageOptions = {}): Promise<void> {
   const state: PopupState = {
-    currentPageSupported: false
+    currentPageSupported: false,
+    pageIdentity: {}
   };
   render(root, state, options);
 
@@ -57,7 +63,8 @@ export async function mountPopupPage(root: HTMLElement, options: PopupPageOption
   state.target = target;
   state.activeTask = activeTask && !isTerminalClipTaskStatus(activeTask.status) ? activeTask : undefined;
   state.lastSummary = lastSummary;
-  state.currentPageSupported = await isSupportedCurrentPage(baseUrl, state.currentTab?.url);
+  state.pageIdentity = await loadPageIdentity(baseUrl, state.currentTab, options);
+  state.currentPageSupported = await isSupportedCurrentPage(baseUrl, state.currentTab?.url, state.pageIdentity);
   render(root, state, options);
 }
 
@@ -66,13 +73,56 @@ async function queryCurrentTab(): Promise<PopupTab | undefined> {
   return tabs[0];
 }
 
-async function isSupportedCurrentPage(baseUrl: string | undefined, pageUrl: string | undefined): Promise<boolean> {
+async function loadPageIdentity(baseUrl: string | undefined, tab: PopupTab | undefined, options: PopupPageOptions): Promise<ConfluencePageIdentity> {
+  if (!baseUrl || !tab?.url || tab.id === undefined || !isDisplayUrlInsideBaseUrl(baseUrl, tab.url)) {
+    return {};
+  }
+
+  return (options.requestPageIdentity ?? requestPageIdentity)(tab.id);
+}
+
+async function isSupportedCurrentPage(baseUrl: string | undefined, pageUrl: string | undefined, pageIdentity: ConfluencePageIdentity): Promise<boolean> {
   if (!baseUrl || !pageUrl) {
     return false;
   }
 
-  const result = await detectConfluencePage({ baseUrl, pageUrl });
+  const result = await detectConfluencePage({ baseUrl, pageUrl, ...pageIdentity });
   return result.ok;
+}
+
+async function requestPageIdentity(tabId: number): Promise<ConfluencePageIdentity> {
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content/pageIdentity.js'] });
+    const response = await chrome.tabs.sendMessage(tabId, { type: 'confluence.extractPageIdentity' });
+    return isPageIdentityResponse(response) ? response : {};
+  } catch {
+    return {};
+  }
+}
+
+function isPageIdentityResponse(response: unknown): response is ConfluencePageIdentity & { type: 'confluence.pageIdentity' } {
+  return Boolean(
+    response &&
+      typeof response === 'object' &&
+      'type' in response &&
+      response.type === 'confluence.pageIdentity'
+  );
+}
+
+function isDisplayUrlInsideBaseUrl(baseUrl: string, pageUrl: string): boolean {
+  try {
+    const base = new URL(baseUrl);
+    const page = new URL(pageUrl);
+    const basePath = base.pathname === '/' ? '' : base.pathname.replace(/\/$/u, '');
+
+    if (base.origin !== page.origin || !page.pathname.startsWith(`${basePath}/display/`)) {
+      return false;
+    }
+
+    return /^\/display\/[^/]+\/.+/u.test(page.pathname.slice(basePath.length));
+  } catch {
+    return false;
+  }
 }
 
 function render(root: HTMLElement, state: PopupState, options: PopupPageOptions): void {
@@ -131,7 +181,8 @@ async function startSave(root: HTMLElement, state: PopupState, options: PopupPag
   const message: SaveCurrentPageMessage = {
     type: 'clip.saveCurrentPage',
     pageUrl: state.currentTab.url,
-    tabId: state.currentTab.id
+    tabId: state.currentTab.id,
+    ...state.pageIdentity
   };
 
   const task = await (options.sendSaveMessage ?? sendSaveMessage)(message);

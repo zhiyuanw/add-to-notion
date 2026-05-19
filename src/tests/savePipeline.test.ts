@@ -194,6 +194,55 @@ describe('Confluence to Notion save pipeline', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it('uses display URL identity from the content bridge when fetching Confluence storage', async () => {
+    await seedConfiguredState();
+    const fetcher = vi
+      .fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({}))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          title: 'Display Page',
+          body: { storage: { value: '<p>Body</p>' } },
+          metadata: { labels: { results: [] } },
+          children: { attachment: { results: [] } }
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: 'notion-page-1', url: 'https://notion.so/notion-page-1' }))
+      .mockResolvedValueOnce(jsonResponse({ object: 'list' }));
+
+    const result = await createSaveConfluencePageOperation({
+      pageUrl: 'https://wiki.example.com/confluence/display/ENG/Project+Plan',
+      domPageId: '24680',
+      fetcher,
+      notionConfig: testConfig,
+      now: () => now
+    })(makeContext());
+
+    expect(result).toMatchObject({ status: 'succeeded', sourceUrl: 'https://wiki.example.com/confluence/display/ENG/Project+Plan' });
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://wiki.example.com/confluence/rest/api/content/24680?expand=body.storage%2Cmetadata.labels%2Cversion%2Cspace%2Cchildren.attachment',
+      expect.objectContaining({ credentials: 'include' })
+    );
+  });
+
+  it('fails unsupported display URLs when content identity is unavailable', async () => {
+    await seedConfiguredState();
+
+    const result = await createSaveConfluencePageOperation({
+      pageUrl: 'https://wiki.example.com/confluence/display/ENG/Project+Plan',
+      fetcher: vi.fn(),
+      notionConfig: testConfig,
+      now: () => now
+    })(makeContext());
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      failure: {
+        code: 'confluence-detection-missing-page-id',
+        message: 'Open a supported Confluence page inside the configured base URL before saving.'
+      }
+    });
+  });
+
   it('keeps partial Notion page URL in the failure summary when append fails after page creation', async () => {
     await seedConfiguredState();
     const fetcher = vi

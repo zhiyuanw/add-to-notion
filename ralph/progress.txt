@@ -5,6 +5,7 @@ Started: 2026年 5月19日 星期二 12时11分47秒 CST
 ## Codebase Patterns
 - Release checklist coverage is centralized in `src/tests/releaseChecklist.test.ts` and can import `public/manifest.json` directly.
 - Build-time extension config can live in a small source module with an empty default and be injected into `dist` by `scripts/build-extension.mjs`.
+- Popup-to-background save messages are the handoff point for tab-local content-script data; inject content helpers only after checking the configured base URL.
 
 ## 2026-05-19 12:14 - US-001
 - Implemented MV3 manifest permissions required for Notion OAuth and runtime Confluence host access.
@@ -23,4 +24,16 @@ Started: 2026年 5月19日 星期二 12时11分47秒 CST
 - **Learnings for future iterations:**
   - Keep OAuth configuration validation shared between OAuth launch and token refresh so runtime auth paths fail consistently.
   - Build-time-only extension configuration can be tested at the source-module boundary and verified by `npm run build` for injection safety.
+---
+
+## 2026-05-19 12:37 - US-003
+- Implemented content-side extraction for Confluence page IDs from DOM metadata and AJS bootstrap metadata.
+- Wired the Popup to request page identity from the active tab, use it during support detection, and forward it to the background save task.
+- Wired the background save message into the save pipeline so display URLs fetch storage by extracted page ID.
+- Added manifest permission and build wiring for on-demand `content/pageIdentity.js` injection.
+- Files changed: `public/manifest.json`, `src/content/pageIdentity.ts`, `src/popup/index.ts`, `src/background/index.ts`, `src/tests/contentPageIdentity.test.ts`, `src/tests/popupSave.test.ts`, `src/tests/savePipeline.test.ts`, `src/tests/releaseChecklist.test.ts`, `tsconfig.build.json`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - Display URL detection needs tab-local content-script data before popup support checks and before background save task creation.
+  - Content-script responses should remain minimal identity-only payloads; Notion auth stays in extension storage/background-owned flows.
+  - Content-script build entries need explicit inclusion in `tsconfig.build.json` and on-demand injection needs `scripting` manifest coverage in the release checklist.
 ---

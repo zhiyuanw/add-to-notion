@@ -17,7 +17,11 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
   }
 
   void startBackgroundClipTask({
-    operation: createSaveConfluencePageOperation({ pageUrl: message.pageUrl })
+    operation: createSaveConfluencePageOperation({
+      pageUrl: message.pageUrl,
+      domPageId: message.domPageId,
+      bootstrapPageId: message.bootstrapPageId
+    })
   }).then(sendResponse);
 
   return true;
@@ -25,7 +29,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 
 void recoverInterruptedClipTaskOnStartup();
 
-function isSaveCurrentPageMessage(message: unknown): message is { type: 'clip.saveCurrentPage'; pageUrl: string; tabId?: number } {
+function isSaveCurrentPageMessage(message: unknown): message is { type: 'clip.saveCurrentPage'; pageUrl: string; tabId?: number; domPageId?: string; bootstrapPageId?: string } {
   return Boolean(
     message &&
       typeof message === 'object' &&

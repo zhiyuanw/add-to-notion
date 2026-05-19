@@ -8,5 +8,5 @@
     "sourceMap": false,
     "types": ["chrome"]
   },
-  "include": ["src/background/index.ts", "src/popup/index.ts", "src/options/index.ts"]
+  "include": ["src/background/index.ts", "src/popup/index.ts", "src/options/index.ts", "src/content/pageIdentity.ts"]
 }

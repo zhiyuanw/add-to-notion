@@ -131,10 +131,15 @@ beforeEach(() => {
 
 describe('V1 release checklist verification', () => {
   it('declares only the runtime permissions and optional host access needed for release', () => {
-    expect(manifest.permissions).toEqual(expect.arrayContaining(['identity', 'storage', 'notifications', 'tabs', 'activeTab']));
+    expect(manifest.permissions).toEqual(expect.arrayContaining(['identity', 'storage', 'notifications', 'tabs', 'activeTab', 'scripting']));
     expect(manifest.permissions).not.toContain('cookies');
     expect(manifest.optional_host_permissions).toEqual(['http://*/*', 'https://*/*']);
     expect(manifest.optional_host_permissions).not.toContain('<all_urls>');
+  });
+
+  it('packages the content page identity bridge for on-demand configured-page injection', () => {
+    expect(manifest.permissions).toContain('scripting');
+    expect('content_scripts' in manifest).toBe(false);
   });
 
   it('ships sanitized fixtures named simple, macro-heavy, and image-heavy', () => {
