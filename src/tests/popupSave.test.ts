@@ -11,6 +11,7 @@ type TestTab = { id?: number; url?: string };
 const storage = new Map<string, unknown>();
 let queryTabs: ReturnType<typeof vi.fn<[], Promise<TestTab[]>>>;
 let sendMessage: ReturnType<typeof vi.fn<[unknown], Promise<ClipTask>>>;
+let storageChangeListeners: Array<(changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void>;
 
 const target = { type: 'page' as const, id: 'page-1', displayName: 'Team Docs' };
 const pageUrl = 'https://confluence.example.com/wiki/pages/viewpage.action?pageId=123';
@@ -18,6 +19,7 @@ const pageUrl = 'https://confluence.example.com/wiki/pages/viewpage.action?pageI
 beforeEach(() => {
   document.body.innerHTML = '<main id="app"></main>';
   storage.clear();
+  storageChangeListeners = [];
   queryTabs = vi.fn(async (): Promise<TestTab[]> => [{ id: 7, url: pageUrl }]);
   sendMessage = vi.fn();
 
@@ -59,6 +61,14 @@ beforeEach(() => {
           for (const key of Array.isArray(keys) ? keys : [keys]) {
             storage.delete(key);
           }
+        })
+      },
+      onChanged: {
+        addListener: vi.fn((listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void) => {
+          storageChangeListeners.push(listener);
+        }),
+        removeListener: vi.fn((listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void) => {
+          storageChangeListeners = storageChangeListeners.filter((registeredListener) => registeredListener !== listener);
         })
       }
     },
@@ -104,10 +114,9 @@ describe('popup save UI', () => {
     expect(getText('#popup-task-progress')).toBe('Detecting Confluence page…');
   });
 
-  it('shows an existing running ClipTask stage and duplicate save progress', async () => {
+  it('shows an existing running ClipTask stage without starting a duplicate save', async () => {
     seedConfiguredPage();
     storage.set(storageKeys.activeClipTaskLock, makeTask({ taskId: 'task-running', status: 'uploading_assets' }));
-    sendMessage.mockResolvedValueOnce(makeTask({ taskId: 'task-running', status: 'uploading_assets' }));
 
     await mountPopupPage(getApp());
     await flushPromises();
@@ -117,8 +126,71 @@ describe('popup save UI', () => {
     getButton('#save-to-notion').click();
     await flushPromises();
 
-    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(sendMessage).not.toHaveBeenCalled();
     expect(getText('#popup-task-progress')).toBe('Uploading images to Notion…');
+  });
+
+  it('updates visible progress when the active task changes after mount', async () => {
+    seedConfiguredPage();
+    storage.set(storageKeys.activeClipTaskLock, makeTask({ taskId: 'task-running', status: 'detecting' }));
+
+    await mountPopupPage(getApp());
+    await flushPromises();
+
+    expect(getText('#popup-task-progress')).toBe('Detecting Confluence page…');
+    emitStorageChange(storageKeys.activeClipTaskLock, makeTask({ taskId: 'task-running', status: 'fetching' }));
+
+    expect(getText('#popup-task-progress')).toBe('Fetching Confluence storage…');
+  });
+
+  it('shows terminal summary when the observed task completes after mount', async () => {
+    seedConfiguredPage();
+    storage.set(storageKeys.activeClipTaskLock, makeTask({ taskId: 'task-running', status: 'writing' }));
+
+    await mountPopupPage(getApp());
+    await flushPromises();
+
+    emitStorageChange(storageKeys.lastTerminalClipTaskSummary, {
+      taskId: 'task-running',
+      status: 'succeeded',
+      completedAt: '2026-05-18T20:50:00.000Z',
+      sourceTitle: 'Roadmap',
+      sourceUrl: pageUrl,
+      target,
+      notionPageUrl: 'https://notion.example/roadmap',
+      warningCount: 0
+    });
+    emitStorageChange(storageKeys.activeClipTaskLock, undefined, makeTask({ taskId: 'task-running', status: 'writing' }));
+
+    expect(getText('#popup-task-progress')).toBe('No save running.');
+    expect(getText('#popup-result-summary')).toContain('Success: created a new Notion page.');
+    expect(getElement<HTMLAnchorElement>('#popup-result-summary a', HTMLAnchorElement).href).toBe('https://notion.example/roadmap');
+  });
+
+  it('does not start a second task when save is clicked during an observed active task', async () => {
+    seedConfiguredPage();
+
+    await mountPopupPage(getApp());
+    await flushPromises();
+
+    emitStorageChange(storageKeys.activeClipTaskLock, makeTask({ taskId: 'task-running', status: 'uploading_assets' }));
+    getButton('#save-to-notion').click();
+    await flushPromises();
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(getText('#popup-task-progress')).toBe('Uploading images to Notion…');
+  });
+
+  it('removes the storage subscription when unmounted', async () => {
+    seedConfiguredPage();
+
+    const unmount = await mountPopupPage(getApp());
+    await flushPromises();
+
+    expect(storageChangeListeners).toHaveLength(1);
+    unmount();
+
+    expect(storageChangeListeners).toHaveLength(0);
   });
 
   it('does not request page identity for non-display URLs', async () => {
@@ -242,6 +314,18 @@ describe('popup save UI', () => {
 function seedConfiguredPage(): void {
   storage.set(storageKeys.confluenceBaseUrl, 'https://confluence.example.com/wiki');
   storage.set(storageKeys.notionDefaultTarget, target);
+}
+
+function emitStorageChange(key: string, newValue: unknown, oldValue?: unknown): void {
+  const change: chrome.storage.StorageChange = oldValue === undefined ? { newValue } : { oldValue, newValue };
+
+  if (newValue === undefined) {
+    delete change.newValue;
+  }
+
+  for (const listener of storageChangeListeners) {
+    listener({ [key]: change }, 'local');
+  }
 }
 
 function makeTask(overrides: Partial<ClipTask> = {}): ClipTask {

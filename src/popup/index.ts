@@ -45,12 +45,37 @@ const runningStageLabels: Record<ClipTaskStatus, string> = {
   cancelled: 'Save cancelled.'
 };
 
-export async function mountPopupPage(root: HTMLElement, options: PopupPageOptions = {}): Promise<void> {
+export async function mountPopupPage(root: HTMLElement, options: PopupPageOptions = {}): Promise<() => void> {
   const state: PopupState = {
     currentPageSupported: false,
     pageIdentity: {}
   };
   render(root, state, options);
+
+  const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string): void => {
+    if (areaName !== 'local') {
+      return;
+    }
+
+    let shouldRender = false;
+
+    if (storageKeys.activeClipTaskLock in changes) {
+      const activeTask = changes[storageKeys.activeClipTaskLock].newValue as ClipTask | undefined;
+      state.activeTask = activeTask && !isTerminalClipTaskStatus(activeTask.status) ? activeTask : undefined;
+      shouldRender = true;
+    }
+
+    if (storageKeys.lastTerminalClipTaskSummary in changes) {
+      state.lastSummary = changes[storageKeys.lastTerminalClipTaskSummary].newValue as TerminalClipTaskSummary | undefined;
+      shouldRender = true;
+    }
+
+    if (shouldRender) {
+      render(root, state, options);
+    }
+  };
+
+  chrome.storage.onChanged.addListener(handleStorageChange);
 
   state.currentTab = await (options.queryCurrentTab ?? queryCurrentTab)();
   const [baseUrl, target, activeTask, lastSummary] = await Promise.all([
@@ -66,6 +91,10 @@ export async function mountPopupPage(root: HTMLElement, options: PopupPageOption
   state.pageIdentity = await loadPageIdentity(baseUrl, state.currentTab, options);
   state.currentPageSupported = await isSupportedCurrentPage(baseUrl, state.currentTab?.url, state.pageIdentity);
   render(root, state, options);
+
+  return () => {
+    chrome.storage.onChanged.removeListener(handleStorageChange);
+  };
 }
 
 async function queryCurrentTab(): Promise<PopupTab | undefined> {
@@ -143,7 +172,7 @@ function render(root: HTMLElement, state: PopupState, options: PopupPageOptions)
   saveButton.id = 'save-to-notion';
   saveButton.type = 'button';
   saveButton.textContent = 'Save to Notion';
-  saveButton.disabled = !state.currentPageSupported || !state.target || !state.currentTab?.url;
+  saveButton.disabled = !state.currentPageSupported || !state.target || !state.currentTab?.url || Boolean(state.activeTask);
   saveButton.addEventListener('click', () => {
     void startSave(root, state, options);
   });
@@ -160,7 +189,7 @@ function render(root: HTMLElement, state: PopupState, options: PopupPageOptions)
 }
 
 async function startSave(root: HTMLElement, state: PopupState, options: PopupPageOptions): Promise<void> {
-  if (!state.currentTab?.url) {
+  if (!state.currentTab?.url || state.activeTask) {
     return;
   }
 

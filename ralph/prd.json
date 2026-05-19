@@ -125,8 +125,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Popup now observes active ClipTask storage changes after mount, updates progress and terminal summaries live, prevents duplicate saves during observed active tasks, and cleans up storage subscriptions on unmount."
     }
   ]
 }

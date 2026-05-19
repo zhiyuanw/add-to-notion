@@ -6,6 +6,7 @@ Started: 2026年 5月19日 星期二 12时11分47秒 CST
 - Release checklist coverage is centralized in `src/tests/releaseChecklist.test.ts` and can import `public/manifest.json` directly.
 - Build-time extension config can live in a small source module with an empty default and be injected into `dist` by `scripts/build-extension.mjs`.
 - Popup-to-background save messages are the handoff point for tab-local content-script data; inject content helpers only after checking the configured base URL.
+- Popup live task UI should observe `chrome.storage.onChanged` for `activeClipTaskLock` and `lastTerminalClipTaskSummary`, then clean up the listener on unmount.
 - Asset-producing conversion should emit `asset_placeholder` blocks and let the save pipeline replace them after upload, preserving document order.
 - Notion file upload expiry validation belongs in asset processing and should compare `expiresAt` to attach-time `now`, not a one-hour lookahead window.
 - Partial Notion writes should be represented on `ClipTaskResult.partial` and propagated into terminal summaries for Popup rendering.
@@ -68,4 +69,15 @@ Started: 2026年 5月19日 星期二 12时11分47秒 CST
   - Partial write state should originate from `NotionWriterError.partialWrite` and be carried on `ClipTaskResult.partial` rather than inferred from failed status alone.
   - Popup terminal summaries should use `TerminalClipTaskSummary.partial` to distinguish partial writes from ordinary failures.
   - No browser MCP was available in this session, so manual browser verification is still needed for the Popup rendering acceptance item.
+---
+
+## 2026-05-19 13:22 - US-007
+- Implemented live Popup observation for active background save tasks after mount.
+- Added storage-change handling for stage progress and terminal summaries, duplicate-save prevention while an active task is observed, and listener cleanup on unmount.
+- Added automated Popup coverage for progress update after mount, terminal update after mount, duplicate click during active task, and cleanup behavior.
+- Files changed: `src/popup/index.ts`, `src/tests/popupSave.test.ts`, `ralph/prd.json`, `ralph/progress.txt`, `ralph/DONE.md`.
+- **Learnings for future iterations:**
+  - Popup task progress should be driven by `chrome.storage.onChanged` for `clipTask.activeLock` and `clipTask.lastTerminalSummary` so it stays live after the Popup opens.
+  - Disable and short-circuit the save action while `state.activeTask` exists; background task de-duplication remains a fallback, not the primary Popup behavior.
+  - No browser MCP was available in this session, so manual browser verification is still needed for the Popup live-progress acceptance item.
 ---
