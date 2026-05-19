@@ -7,6 +7,7 @@ Started: 2026年 5月19日 星期二 12时11分47秒 CST
 - Build-time extension config can live in a small source module with an empty default and be injected into `dist` by `scripts/build-extension.mjs`.
 - Popup-to-background save messages are the handoff point for tab-local content-script data; inject content helpers only after checking the configured base URL.
 - Asset-producing conversion should emit `asset_placeholder` blocks and let the save pipeline replace them after upload, preserving document order.
+- Notion file upload expiry validation belongs in asset processing and should compare `expiresAt` to attach-time `now`, not a one-hour lookahead window.
 
 ## 2026-05-19 12:14 - US-001
 - Implemented MV3 manifest permissions required for Notion OAuth and runtime Confluence host access.
@@ -46,4 +47,13 @@ Started: 2026年 5月19日 星期二 12时11分47秒 CST
 - **Learnings for future iterations:**
   - Asset rendering order belongs to the converted block stream; avoid appending rendered assets after conversion.
   - Asset upload tests should route mocked fetch responses by URL because uploads run concurrently.
+---
+
+## 2026-05-19 13:08 - US-005
+- Fixed Notion file upload expiry validation so completed uploads are attachable with no expiry or future expiry, and expired or equality-at-now uploads degrade to source links with warnings.
+- Added boundary coverage for no expiry, future expiry, already expired expiry, and equality-at-now expiry.
+- Files changed: `src/assets/index.ts`, `src/tests/assetsProcessing.test.ts`, `ralph/prd.json`, `ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - File upload attachability is decided at the asset processing boundary using the provided `now` clock.
+  - Expired uploads should remain recoverable as original Confluence source links and warning degradations, not Notion file upload blocks.
 ---

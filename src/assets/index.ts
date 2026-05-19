@@ -84,7 +84,6 @@ export interface ConfluenceAssetProcessingOptions extends NotionAuthOptions {
 }
 
 const maxUploadSizeBytes = 20 * 1024 * 1024;
-const maxAttachWindowMs = 60 * 60 * 1000;
 const assetUploadConcurrency = 3;
 
 interface AssetCandidate {
@@ -273,8 +272,8 @@ async function processSingleAsset(
 
     const completed = await completeFileUpload(upload.id, options);
 
-    if (!canAttachWithinOneHour(completed.expiresAt, options.now?.() ?? new Date())) {
-      return degradeAsset(asset, 'failed', 'asset-attach-window-expired', `Notion file upload cannot be attached within 1 hour: ${asset.sourceUrl}`);
+    if (!canAttachAt(completed.expiresAt, options.now?.() ?? new Date())) {
+      return degradeAsset(asset, 'failed', 'asset-attach-window-expired', `Notion file upload expired before it could be attached: ${asset.sourceUrl}`);
     }
 
     return {
@@ -368,13 +367,13 @@ async function completeNotionFileUpload(fileUploadId: string, options: Confluenc
   };
 }
 
-function canAttachWithinOneHour(expiresAt: string | undefined, now: Date): boolean {
+function canAttachAt(expiresAt: string | undefined, now: Date): boolean {
   if (!expiresAt) {
     return true;
   }
 
   const expiresAtMs = Date.parse(expiresAt);
-  return Number.isFinite(expiresAtMs) && expiresAtMs <= now.getTime() + maxAttachWindowMs;
+  return Number.isFinite(expiresAtMs) && expiresAtMs > now.getTime();
 }
 
 function degradeAsset(

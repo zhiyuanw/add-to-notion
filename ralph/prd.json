@@ -87,8 +87,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Fixed Notion file upload expiry validation so no-expiry and future-expiry uploads attach, while expired or equality-at-now uploads degrade to source links with warnings."
     },
     {
       "id": "US-006",
