@@ -17,8 +17,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Declared identity permission and http/https optional host permissions with release checklist coverage."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-002",
@@ -34,8 +34,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Added build-time NOTION_OAUTH_CLIENT_ID injection, pre-launch missing/placeholder validation, clear Options UI guidance, and OAuth coverage."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-003",
@@ -52,8 +52,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Added content-side Confluence page identity extraction, popup/background identity forwarding, on-demand content-script injection, and detector integration coverage."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-004",
@@ -70,8 +70,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Added asset placeholders during conversion and save-pipeline replacement so uploaded or degraded asset blocks render at original document positions."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-005",
@@ -87,8 +87,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Fixed Notion file upload expiry validation so no-expiry and future-expiry uploads attach, while expired or equality-at-now uploads degrade to source links with warnings."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-006",
@@ -106,8 +106,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Added partial write propagation from Notion append failures through save summaries and Popup rendering, preserving the partial page URL and manual cleanup guidance."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-007",
@@ -125,8 +125,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "Popup now observes active ClipTask storage changes after mount, updates progress and terminal summaries live, prevents duplicate saves during observed active tasks, and cleans up storage subscriptions on unmount."
+      "passes": false,
+      "notes": ""
     }
   ]
 }

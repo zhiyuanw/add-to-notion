@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Add to Notion",
+  "description": "Save Confluence Server/Data Center pages to Notion.",
+  "version": "0.1.0",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background/index.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "notifications", "tabs", "activeTab", "scripting"],
+  "host_permissions": ["https://api.notion.com/*"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"]
+}

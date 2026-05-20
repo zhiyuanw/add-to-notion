@@ -1,0 +1,27 @@
+# Ralph Progress
+
+## Codebase Patterns
+
+- Use npm scripts as the project quality gate: `npm run build`, `npm run typecheck`, and `npm test`.
+- MV3 static assets live in `public/`; extension entrypoints live in `src/background`, `src/popup`, and `src/options`.
+- Shared domain contracts live in `src/shared/domain`; storage key contracts live in `src/shared/storage`.
+- Route all typed `chrome.storage.local` access through `src/shared/storage/local.ts`; logout cleanup preserves Confluence base URL.
+- Normalize and validate Confluence base URLs through `src/confluence/baseUrl.ts`; store them via `saveConfluenceBaseUrl`.
+- Request and check Confluence host permissions through `src/confluence/permissions.ts`; permissions are origin-scoped, not context-path-scoped.
+- Options UI logic can be tested with `happy-dom` and exported mount/render helpers from `src/options/index.ts`.
+- Notion OAuth helpers live in `src/notion/oauth.ts`; inject `fetcher`, `now`, and `createState` in tests instead of relying on real network or time.
+- Confluence page detection lives in `src/confluence/detector.ts`; it must check host permission and enforce the normalized base URL context path before matching page URL forms.
+- Confluence storage fetching lives in `src/confluence/fetcher.ts`; it uses `credentials: 'include'`, enforces the base URL path, and maps recoverable HTTP failures to typed reasons.
+- Route external HTTP calls through `src/shared/request.ts` to apply 30s timeout, retry policy, 429 retry hints, and caller-provided deadlines.
+- Parse Confluence storage XML through `src/confluence/storageParser.ts`; it preserves namespace-qualified nodes, blocks external entities, degrades unsafe raw HTML, and returns typed parse failures.
+- Convert supported Confluence storage AST content through `src/converter/index.ts`; it emits Notion block objects directly instead of using Markdown.
+- Asset discovery, processing, and rendering live in `src/assets/index.ts`; tests should inject fetch/upload hooks and keep asset failures as warning degradations.
+- Notion page creation and clipped-page writes live in `src/notion/writer.ts`; create new pages, prepend metadata toggle, append blocks in batches of at most 100.
+- Background task state lives in `src/background/clipTaskRunner.ts`; use `startBackgroundClipTask` for one active non-terminal task and startup recovery.
+- Full save orchestration lives in `src/background/savePipeline.ts`; create operations with `createSaveConfluencePageOperation`.
+- Popup UI logic can be tested with `happy-dom` and exported `mountPopupPage` from `src/popup/index.ts`; background save starts via `clip.saveCurrentPage` runtime messages.
+- ClipTask completion feedback lives in `src/background/notifications.ts`; `persistTerminalTask` triggers success/failure notifications and badge updates.
+- Shared sanitized release fixtures live in `src/tests/fixtures.ts`; release checklist coverage is centralized in `src/tests/releaseChecklist.test.ts`.
+
+Generated from `.scratch/spec-compliance-usability/PRD.md` on 2026-05-19.
+
