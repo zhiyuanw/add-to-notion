@@ -3,6 +3,7 @@ dist/
 .DS_Store
 ralph/.last-branch
 ralph/CLAUDE.md
-ralph/SPEC-Confluence-to-Notion-Chrome-Extension.md
+ralph/archive/SPEC-Confluence-to-Notion-Chrome-Extension.md
 ralph/ralph.sh
 scripts/ralph/
+.idea/

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Chrome MV3 extension scaffold for saving Confluence Server/Data Center pages to Notion.
+Chrome MV3 extension scaffold for saving Confluence Server/Data Center pages and Google Docs to Notion.
 
 ## Commands
 
@@ -18,6 +18,6 @@ Do not invent commands before the corresponding tooling exists in the repo.
 
 - Product scope decisions: [Product scope](docs/claude/product-scope.md)
 - Architecture, storage, auth, or task runner changes: [Architecture constraints](docs/claude/architecture.md)
-- Confluence-to-Notion conversion changes: [Conversion behavior](docs/claude/conversion.md)
+- Confluence or Google Docs conversion changes: [Conversion behavior](docs/claude/conversion.md)
 - New feature or regression coverage: [Testing expectations](docs/claude/testing.md)
 - Unclear V1 requirements or conflicts in summarized guidance: [Full V1 spec](SPEC-Confluence-to-Notion-Chrome-Extension.md)

@@ -1,9 +1,9 @@
-# SPEC: Confluence-to-Notion Chrome Extension
+# SPEC: Add-to-Notion Chrome Extension
 
 Path: Projects > 个人工作知识库建设
 Status: Draft
 Owner: TBD
-Last updated: 2026-05-18
+Last updated: 2026-05-21
 
 ## 1. 规范语言
 
@@ -16,15 +16,16 @@ Last updated: 2026-05-18
 
 ## 2. 问题陈述
 
-团队知识主要沉淀在 Confluence Server / Data Center 页面里，个人知识库和 AI 工作流正在迁移到 Notion。现有工具缺一个按需、单页、保真剪藏能力：用户打开一篇 Confluence 页面，点击 Chrome Extension，就能保存到自己的 Notion workspace。
+团队知识主要沉淀在 Confluence Server / Data Center 页面和 Google Docs 里，个人知识库和 AI 工作流正在迁移到 Notion。现有工具缺一个按需、单页、保真剪藏能力：用户打开一篇 Confluence 页面或 Google Doc，点击 Chrome Extension，就能保存到自己的 Notion workspace。
 
 普通网页剪藏不适合：
 
 - Confluence 页面常用 Mermaid、Code、Info/Warning、Expand、Draw.io 等宏。DOM 抓取只能拿到渲染结果，会丢失 Mermaid 源码、宏语义和折叠结构。
 - 内网图片、附件、截图通常托管在 Confluence 内网。Notion 服务器无法直接访问这些 URL，必须由用户浏览器带 cookie 下载后再上传到 Notion。
-- 批量迁移工具面向 space 或全站迁移，不适合“看到一篇有用文档就保存一篇”的个人工作流。
+- Google Docs 的 DOM 不是稳定的文档结构，且私有文档读取不应通过页面抓取绕过权限；内部工具场景使用本机 `gws` CLI 作为授权读取边界。
+- 批量迁移工具面向 space、全站或 Drive 文件夹迁移，不适合“看到一篇有用文档就保存一篇”的个人工作流。
 
-V1 目标不是通用 web clipper，也不是企业级 Confluence-to-Notion 迁移系统。边界是：把当前打开的 Confluence 单页，尽可能保真地保存到用户自己的 Notion。
+V1 目标不是通用 web clipper，也不是企业级迁移系统。边界是：把当前打开的 Confluence 单页或 Google Doc，尽可能保真地保存到用户自己的 Notion。
 
 ## 3. 目标和非目标
 
@@ -36,6 +37,7 @@ V1 MUST 支持：
 - 用户配置一个自己的 Confluence Server / Data Center 7.13.7 base URL，并显式授予对应 host permission。
 - 用户选择默认 Notion 保存目标：database 或 page；两种 target 都是 V1 MUST 支持。
 - 用户在 Confluence 页面手动点击保存。
+- 用户在 Google Docs 文档页面手动点击保存；Google Docs 读取通过本机 `gws` CLI Native Messaging bridge，不通过 Google OAuth client。
 - 扩展通过 Confluence REST API 读取 storage format，而不是用 DOM-to-Markdown 作为主路径。
 - Mermaid 宏保存为 Notion code block，language 优先使用 `mermaid`。
 - Code / noformat 宏保留代码内容和语言标记。
@@ -43,7 +45,8 @@ V1 MUST 支持：
 - Expand 宏映射为 Notion toggle，并尽量递归转换内部内容。
 - 内网图片、附件图片、Draw.io 渲染图由浏览器下载后上传到 Notion。
 - Confluence 原始 URL、space、labels、last modified 等 metadata 保存到 Notion。
-- 每次保存 Confluence 页面时都创建新的 Notion 页面，不查找或更新旧页面。
+- Google Doc 原始 URL、doc ID、last clipped at 等 metadata 保存到 Notion。
+- 每次保存 Confluence 页面或 Google Doc 时都创建新的 Notion 页面，不查找或更新旧页面。
 - 大页面保存任务在后台运行；popup 关闭不取消任务。
 - 内容保真问题局部降级，不因单个图片、宏、表格失败而中断整页保存。
 
@@ -51,12 +54,14 @@ V1 MUST 支持：
 
 V1 MUST NOT 做：
 
-- 非 Confluence 页面的通用网页剪藏。
+- 非 Confluence 页面或 Google Docs 文档页面的通用网页剪藏。
+- 公开分发场景下的 Google OAuth / Drive API 集成。
 - Confluence Cloud 支持。
 - Confluence space、page tree 或全站批量迁移。
 - 双向同步。
 - 增量同步或定时同步。
 - Confluence comments、permissions、version history、audit history 同步。
+- Google Docs comments、suggestions、permissions、version history 同步。
 - 复杂表格、合并单元格、彩色表头的完全保真。
 - Draw.io 源文件的可编辑导入。
 - Notion-to-Confluence 导出。
@@ -72,10 +77,11 @@ V1 MUST NOT 做：
   -> 配置 Notion Internal Integration Token
   -> 配置 Confluence base URL
   -> 授予 host permission
+  -> 安装本机 gws Native Messaging host
   -> 选择 Notion database/page 目标
-  -> 打开 Confluence 页面
+  -> 打开 Confluence 页面或 Google Doc
   -> 点击保存
-  -> 后台读取 storage XML、转换、上传图片、写入 Notion
+  -> 后台读取源文档、转换、上传图片、写入 Notion
   -> 展示成功、失败、降级 warning
 ```
 
@@ -83,14 +89,18 @@ V1 MUST NOT 做：
 
 ```mermaid
 flowchart TD
-    A[User clicks extension] --> B[Confluence Detector]
-    B --> C[Fetch storage format via Confluence REST API]
-    C --> D[Parse storage XML to AST]
-    D --> E[Convert AST to Notion blocks]
-    C --> F[Download and upload images]
-    E --> G[Create new Notion page]
+    A[User clicks extension] --> B{Source Detector}
+    B --> C[Fetch Confluence storage format via REST API]
+    B --> D[Request Google Doc HTML via Native Messaging gws bridge]
+    C --> E[Parse storage XML to AST]
+    D --> F[Parse Google export HTML to AST]
+    E --> G[Convert AST to Notion blocks]
     F --> G
-    G --> H[Show result notification]
+    C --> H[Download and upload images]
+    D --> H
+    G --> I[Create new Notion page]
+    H --> I
+    I --> J[Show result notification]
 ```
 
 ### 4.3 主组件
@@ -100,8 +110,11 @@ flowchart TD
 | Popup UI | 展示当前页面状态、目标、保存按钮、任务进度和结果摘要。 |
 | Options UI | 配置 Notion Internal Integration Token、Confluence base URL、host permission、默认保存目标。 |
 | Background Task Runner | 执行保存任务，维护进度、warning、失败状态；popup 关闭后继续运行。 |
+| Source Detector | 判断当前 tab 是否为已配置 Confluence 页面或支持的 Google Docs 文档，并解析 source identity。 |
 | Confluence Detector | 判断当前 tab 是否为已配置 Confluence 实例内的支持页面，并解析 page identity。 |
 | Confluence Storage Fetcher | 用浏览器会话 cookie 拉取 storage XML、metadata、attachments。 |
+| Google Docs Native Bridge | 通过 `chrome.runtime.connectNative("add_to_notion_gws")` 调用本机 `gws` CLI wrapper，导出当前 Google Doc HTML。 |
+| Google Docs HTML Parser | 安全解析 `gws` 返回的 Google export HTML，生成内部 AST。 |
 | Storage XML Parser | 安全解析 Confluence storage XML，生成内部 AST。 |
 | Macro Mapper | 将已知 Confluence 宏映射为 Notion blocks；未知宏降级。 |
 | Asset Handler | 下载 Confluence 图片/附件/Draw.io 渲染图，并上传到 Notion。 |
@@ -116,7 +129,8 @@ flowchart TD
 | Confluence Server / Data Center REST API | 读取页面 storage format、metadata、attachments | 拉取失败则整页保存失败。 |
 | Browser session cookie | 访问内网 Confluence 内容 | cookie 失效或无权限则整页保存失败。 |
 | Notion API + Internal Integration Token | 创建页面、写入 blocks、上传文件 | 认证或写入失败则整页保存失败。 |
-| Notion File Upload API | 上传内网图片和 Draw.io 渲染图 | 单个文件失败只产生 warning。 |
+| Notion File Upload API | 上传内网图片、Google Doc 图片和 Draw.io 渲染图 | 单个文件失败只产生 warning。 |
+| Native Messaging host + `gws` CLI | 内部工具读取 Google Docs 导出 HTML | host 缺失、`gws` 未登录或导出失败则整页保存失败。 |
 
 ## 5. 核心领域模型
 
@@ -125,9 +139,11 @@ flowchart TD
 | Entity | Key fields | Meaning | Owner |
 | --- | --- | --- | --- |
 | `ConfluencePageRef` | `baseUrl`, `pageId`, `pageUrl` | 当前 Confluence 页面身份。 | Confluence Detector |
+| `GoogleDocRef` | `docId`, `docUrl` | 当前 Google Docs 文档身份。 | Source Detector |
 | `ConfluencePageData` | `title`, `bodyStorageXml`, `metadata`, `attachments` | REST API 返回的页面内容和元数据。 | Storage Fetcher |
+| `GoogleDocData` | `title`, `exportHtml`, `metadata`, `assets` | Native bridge 返回的 Google Doc 内容和元数据。 | Google Docs Native Bridge |
 | `NotionTarget` | `type`, `id`, `displayName` | 用户选择的保存位置，type 为 `database` 或 `page`。 | Target Manager |
-| `ClipTask` | `taskId`, `pageRef`, `target`, `status`, `progress`, `warnings` | 一次保存任务。 | Background Task Runner |
+| `ClipTask` | `taskId`, `sourceRef`, `target`, `status`, `progress`, `warnings` | 一次保存任务。 | Background Task Runner |
 | `AssetRef` | `sourceUrl`, `filename`, `mimeType`, `size`, `notionFileRef`, `status` | 图片、附件、Draw.io 渲染图。 | Asset Handler |
 | `Degradation` | `type`, `source`, `message`, `severity` | 局部降级记录，用于结果摘要。 | Converter / Writer |
 
@@ -136,6 +152,8 @@ flowchart TD
 - `baseUrl` MUST 归一化为 origin + optional context path，不保留末尾 `/`。
 - `pageId` MUST 来自 Confluence 页面 ID；缺失时 MAY 用 DOM metadata 辅助提取。
 - `pageUrl` MUST 保存用户可打开的原始页面 URL。
+- `docId` MUST 从 `https://docs.google.com/document/d/{docId}/...` URL 解析。
+- `docUrl` MUST 保存用户可打开的原始 Google Docs URL，query 和 hash MAY 被保留用于用户返回原位置，但导出请求 MUST 只使用 `docId`。
 - `lastModified` MUST 保存为 ISO 8601 字符串；展示时 MAY 使用用户本地时区。
 - Labels MUST 去重，并保留 Confluence 返回的原始大小写。
 - Attachment filename SHOULD 保留原名；上传到 Notion 时如需改名，必须保持可追溯。
@@ -146,8 +164,8 @@ flowchart TD
 | --- | --- | --- |
 | `idle` | 无任务。 | No |
 | `detecting` | 正在识别当前页面。 | No |
-| `fetching` | 正在读取 Confluence storage format。 | No |
-| `parsing` | 正在解析 XML。 | No |
+| `fetching` | 正在读取源文档内容。 | No |
+| `parsing` | 正在解析源文档。 | No |
 | `converting` | 正在生成 Notion blocks。 | No |
 | `uploading_assets` | 正在上传图片和附件。 | No |
 | `writing` | 正在创建 Notion 页面。 | No |
@@ -170,7 +188,21 @@ flowchart TD
 - Logout MUST 清理本地 Notion token、当前 workspace 信息、默认 target 和最近一次 terminal `ClipTask` 结果摘要。
 - Logout MUST NOT 清理 Confluence base URL 或主动移除已授予的 Confluence host permission。
 
-### 6.2 Confluence 配置
+### 6.2 Google Docs Native Messaging bridge
+
+Google Docs support is an internal-tool feature and MUST use a local Native Messaging host backed by the user's existing `gws` CLI credentials.
+
+- Extension MUST NOT implement Google OAuth, Google OAuth client ID, Google redirect URI, Google scopes, authorization-code exchange, access token refresh, or Google token storage.
+- Manifest MUST request `nativeMessaging` when Google Docs support is enabled.
+- Native host name MUST be `add_to_notion_gws` unless the implementation documents a different build-time constant.
+- The native host manifest MUST restrict `allowed_origins` to the extension ID.
+- The native wrapper MUST expose only explicit message types required by this extension and MUST NOT pass arbitrary shell commands from extension input.
+- The first supported native request MUST be `{ "type": "exportGoogleDoc", "docId": string, "url": string }`.
+- The successful native response MUST include `{ "title": string, "html": string, "sourceUrl": string }` and MAY include asset references when the wrapper can resolve them.
+- Native host missing, native host protocol error, `gws` missing, `gws` not logged in, or Google Docs export failure MUST fail the whole task before Notion page creation.
+- Google Docs content scripts MUST NOT receive Notion tokens.
+
+### 6.3 Confluence 配置
 
 - 扩展 MUST NOT 内置默认 Confluence 实例。
 - 用户 MUST 手动配置一个 Confluence Server / Data Center base URL。
@@ -189,7 +221,7 @@ flowchart TD
 - 扩展 MUST NOT 请求 `cookies` permission。
 - Confluence 请求 MUST 使用 `fetch(url, { credentials: 'include' })` 依赖浏览器会话。
 
-### 6.3 Notion 保存目标
+### 6.4 Notion 保存目标
 
 - 用户 MUST 选择默认 `NotionTarget` 后才能保存。
 - Options UI MUST list searchable page and database targets accessible to the configured Notion integration token.
@@ -202,9 +234,9 @@ flowchart TD
 - Database target MUST NOT 自动创建或修改 metadata properties；metadata MUST 写入页面正文顶部。
 - Page target MUST 把 metadata 写入页面正文顶部。
 
-## 7. Confluence 输入合同
+## 7. 输入合同
 
-### 7.1 支持版本
+### 7.1 Confluence 支持版本
 
 - V1 MUST support Confluence Server / Data Center 7.13.7.
 - Support for other Confluence Server / Data Center versions is best effort and not a V1 acceptance gate.
@@ -248,7 +280,44 @@ type ConfluencePageData = {
 
 Fetcher MUST 把 HTTP 401/403 映射为认证或权限失败。Fetcher MUST 把 404 映射为页面不存在或无权限。Fetcher MUST 把 5xx 和网络错误映射为 Confluence 临时失败。
 
-## 8. XML 解析和转换合同
+### 7.4 Google Docs 页面检测
+
+Google Docs support MUST detect only `https://docs.google.com/document/d/{docId}/...` URLs.
+
+V1 MUST support these path variants:
+
+- `/document/d/{docId}/edit`
+- `/document/d/{docId}/preview`
+- `/document/d/{docId}/copy`
+
+Query strings and fragments MAY be present. Non-document Google Docs paths MUST be rejected as unsupported.
+
+### 7.5 Google Docs export 拉取
+
+Google Docs Fetcher MUST call the Native Messaging bridge with:
+
+```json
+{ "type": "exportGoogleDoc", "docId": "...", "url": "..." }
+```
+
+Fetcher MUST output:
+
+```ts
+type GoogleDocData = {
+  title: string
+  exportHtml: string
+  metadata: {
+    originalUrl: string
+    docId: string
+    lastClippedAt: string
+  }
+  assets: AssetRef[]
+}
+```
+
+The extension MUST NOT call Google Drive or Google Docs APIs directly in V1. Missing native host, native host protocol errors, `gws` auth errors, export failure, or empty HTML MUST fail the whole task before Notion page creation.
+
+## 8. 解析和转换合同
 
 ### 8.1 XML 解析安全
 
@@ -263,7 +332,19 @@ Storage XML Parser MUST：
 
 整个 storage XML 无法解析时，任务 MUST 失败。
 
-### 8.2 基础内容支持
+### 8.2 Google Docs HTML 解析安全
+
+Google Docs HTML Parser MUST：
+
+- Treat `gws` export HTML as untrusted input.
+- 禁用外部实体解析和外部资源加载。
+- 不执行 HTML、SVG、脚本、事件 handler 或 inline style 中的可执行内容。
+- 不把 unsupported raw HTML 作为 executable 或 renderable HTML 输出到 Notion。
+- Unsupported inline HTML SHOULD be converted to plain text when text content is recoverable; otherwise it MUST create a `Degradation`.
+
+整个 Google export HTML 为空或无法解析时，任务 MUST 失败。
+
+### 8.3 基础内容支持
 
 Parser + Converter MUST 支持：
 
@@ -280,7 +361,7 @@ Parser + Converter MUST 支持：
 - `ri:attachment`。
 - `ri:url`。
 
-### 8.3 宏映射
+### 8.4 宏映射
 
 | Confluence macro | Notion output | Required behavior |
 | --- | --- | --- |
@@ -295,7 +376,7 @@ Parser + Converter MUST 支持：
 
 Unknown macro MUST NOT 中断整页保存。
 
-### 8.4 表格处理
+### 8.5 表格处理
 
 V1 表格为 best effort。
 
@@ -319,26 +400,29 @@ SHOULD 降级：
 
 Asset Handler MUST：
 
-1. 从 storage XML 和 attachment metadata 解析图片 URL。
+1. 从 storage XML、attachment metadata、Google export HTML 或 native bridge asset metadata 解析图片 URL。
 2. 仅对与 configured Confluence base URL same-origin 的 Confluence-hosted asset URL 使用 `credentials: 'include'` 下载。
-3. 使用 Notion File Upload API 上传文件。
-4. 用 Notion file reference 替换原图片引用。
+3. 对 Google Doc 图片，MUST 只下载 native bridge 明确返回或 Google export HTML 明确引用的 asset；MUST NOT add Google credentials in the extension.
+4. 使用 Notion File Upload API 上传文件。
+5. 用 Notion file reference 替换原图片引用。
 
 规则：
 
 - 从 storage XML 和 attachment metadata 解析出的 Confluence-hosted asset URL MUST be same-origin with the configured Confluence base URL.
+- Google Doc asset download MUST use only URLs or payloads provided by the native bridge/export HTML; extension MUST NOT store or receive Google tokens.
 - Same-origin asset URLs MAY be outside the normalized base URL path.
 - Cross-origin asset URLs MUST NOT be downloaded with Confluence credentials.
 - Cross-origin external image URLs MUST NOT be uploaded to Notion in V1.
 - Cross-origin external image URLs SHOULD be emitted as Notion external image blocks when the URL appears directly usable by Notion; otherwise they MUST be preserved as ordinary link text or bookmark/link blocks.
 - 图片上传并发 MUST 限制为 3。
 - 单个图片失败 MUST NOT 中断整页保存。
-- 上传失败时，页面正文 MUST 降级为普通文本或 bookmark/link block，文本包含原 Confluence 链接。
+- 上传失败时，页面正文 MUST 降级为普通文本或 bookmark/link block，文本包含原 source 链接。
 - 上传失败时，页面正文 MUST NOT 使用 Notion external image block 指向 Confluence 内网图片 URL。
 - 最终结果 MUST 展示 warning count，例如 `Saved with 3 image warnings`。
 - Clipped document MUST NOT 为每张失败图片增加错误 callout。
 - Image caption MUST NOT 默认追加 source URL。
 - 页面级 metadata MUST 保留 Original URL。
+- Google Doc image download/upload failure MUST be a local degradation with warning and MUST NOT fail the whole task.
 
 ### 9.2 文件大小、时效和类型
 
@@ -366,7 +450,14 @@ Asset Handler MUST：
 
 Converter MUST 直接生成 Notion blocks。Markdown MUST NOT 作为主中间格式，因为 Markdown 无法稳定表达 Notion callout、toggle、table、image、caption、nested blocks。
 
-### 10.2 Database target
+### 10.2 Metadata toggle
+
+Notion Writer MUST write source metadata into a toggle at the top of the clipped page body and MUST NOT create or modify database metadata properties.
+
+- Confluence pages MUST use `Confluence metadata` toggle containing Original URL、Confluence Base URL、Confluence Page ID、Confluence Space、Labels、Last Modified、Last Clipped At。
+- Google Docs pages MUST use `Google Docs metadata` toggle containing Original URL、Google Doc ID、Last Clipped At。
+
+### 10.3 Database target
 
 当 target 为 database：
 
@@ -375,32 +466,32 @@ Converter MUST 直接生成 Notion blocks。Markdown MUST NOT 作为主中间格
 - Notion Writer MUST use the saved database title property name / id to set the clipped page title.
 - Notion Writer MUST NOT proactively re-read database metadata before each save solely to detect title property drift.
 - If Notion page creation fails because the saved database title property, schema, or target permission is no longer valid, the task MUST fail early with a target-invalid message instructing the user to reselect the target.
-- Notion Writer MUST 在 clipped page 顶部添加 `Confluence metadata` toggle。
-- Toggle 内 MUST 包含 Original URL、Confluence Base URL、Confluence Page ID、Confluence Space、Labels、Last Modified、Last Clipped At。
-- Database page 的 title property MUST 使用 Confluence page title，不追加 pageId、时间戳或其他去重后缀。
+- Notion Writer MUST 在 clipped page 顶部添加对应 source metadata toggle。
+- Toggle contents MUST follow section 10.2 metadata rules for the source type.
+- Database page 的 title property MUST 使用 source title，不追加 pageId、docId、时间戳或其他去重后缀。
 
-### 10.3 Page target
+### 10.4 Page target
 
 当 target 为 page：
 
 - Notion Writer MUST 在选中 page 下创建新的 clipped page。
-- Clipped page title MUST 使用 Confluence page title，不追加 pageId、时间戳或其他去重后缀。
-- Notion Writer MUST 在 clipped page 顶部添加 `Confluence metadata` toggle。
-- Toggle 内 MUST 包含 Original URL、Confluence Base URL、Confluence Page ID、Confluence Space、Labels、Last Modified、Last Clipped At。
+- Clipped page title MUST 使用 source title，不追加 pageId、docId、时间戳或其他去重后缀。
+- Notion Writer MUST 在 clipped page 顶部添加对应 source metadata toggle。
+- Toggle contents MUST follow section 10.2 metadata rules for the source type.
 
-### 10.4 重复保存
+### 10.5 重复保存
 
-重复保存同一 Confluence 页面 MUST 创建新的 Notion page。
+重复保存同一 Confluence 页面或 Google Doc MUST 创建新的 Notion page。
 
 规则：
 
 - Writer MUST NOT 查询 `chrome.storage.local` 中的历史页面映射来复用旧页面。
 - Writer MUST NOT 为了去重而扫描 Notion workspace 或 database。
 - Writer MUST NOT 更新、清空、归档或删除先前创建的 clipped page。
-- 每次保存仍然 MUST 使用 Confluence page title 作为 Notion page title，并写入完整 metadata，包括 Original URL、Confluence Base URL、Confluence Page ID、Last Modified 和 Last Clipped At。
+- 每次保存仍然 MUST 使用 source title 作为 Notion page title，并写入完整 metadata，包括 Original URL 和 Last Clipped At；Confluence additionally includes Confluence Base URL、Confluence Page ID、Last Modified。
 - Popup 和结果摘要 SHOULD 明确展示“已创建新 Notion 页面”，避免用户误以为覆盖了旧页面。
 
-### 10.5 Block 写入
+### 10.6 Block 写入
 
 - Writer MUST 每批 append 不超过 100 blocks。
 - Writer MUST 遵守 Notion nested block 限制；超出时 SHOULD 降级为扁平结构并记录 warning。
@@ -415,7 +506,7 @@ Converter MUST 直接生成 Notion blocks。Markdown MUST NOT 作为主中间格
 - 保存操作 MUST 在 background service worker 中运行。
 - ClipTask MUST have a 5-minute overall timeout measured from task start.
 - On overall timeout, the task MUST transition to `failed`, release the single-task lock, and show a retryable timeout message to the user.
-- All Confluence page fetch, asset download, and Notion API requests MUST use a 30-second per-request timeout.
+- All Confluence page fetch, Google native bridge calls, asset download, and Notion API requests MUST use a 30-second per-request timeout.
 - Retryable external request failures MUST be retried at most 2 times per request, bounded by the 5-minute overall task timeout.
 - Retryable failures are network errors, HTTP 408, HTTP 429, and HTTP 5xx.
 - HTTP 400, 401, 403, and 404 MUST NOT be retried, except where a specific API uses a documented retryable 4xx other than 408 or 429.
@@ -517,7 +608,7 @@ Debug log MUST 脱敏 secrets。
 Required fixtures：
 
 1. `simple`
-   - headings
+   - Confluence storage XML with headings
    - paragraphs
    - links
    - lists
@@ -535,6 +626,23 @@ Required fixtures：
    - external images
    - broken image
    - more than one image batch
+4. `google-simple`
+   - Google export HTML with headings
+   - paragraphs
+   - links
+   - lists
+   - basic table
+   - inline formatting
+5. `google-image-heavy`
+   - multiple images
+   - broken image
+   - oversized image
+   - image download failure
+6. `google-structure-heavy`
+   - nested lists
+   - nested tables or table fallback
+   - heading hierarchy
+   - horizontal rules
 
 ### 15.2 Automated tests
 
@@ -550,8 +658,14 @@ Required fixtures：
 | Core | Detect `viewpage.action?pageId=` URL | Extract correct `ConfluencePageRef`. |
 | Core | Detect `/display/SPACE/Page+Title` URL with DOM metadata | Extract pageId or fail with unsupported page. |
 | Core | Detect `/spaces/SPACE/pages/{id}` URL | Extract correct pageId. |
+| Core | Detect Google Docs URL variants | Supports `/edit`, `/preview`, and `/copy` with query/hash; rejects non-document Google Docs paths. |
+| Core | Missing Google native host | Fails before Notion page creation with install-bridge guidance. |
+| Core | `gws` not logged in or export failed | Fails before Notion page creation with actionable `gws` auth/export guidance. |
 | Core | Parse simple fixture | Generate headings, paragraphs, links, lists, table blocks. |
 | Core | Parse macro-heavy fixture | Generate expected code, callout, toggle, image/link fallback blocks. |
+| Core | Parse google-simple fixture | Generate headings, paragraphs, links, lists, table blocks, and `Google Docs metadata` toggle. |
+| Core | Parse google-image-heavy fixture | Upload valid images; preserve failed image source as text or bookmark/link block; warning count increments. |
+| Core | Parse google-structure-heavy fixture | Preserve heading hierarchy and nested lists; degrade unsupported tables locally with warning. |
 | Core | Unknown macro | Generate unsupported macro callout with macro name and recoverable body text; macro parameters are not emitted; task does not fail. |
 | Core | Mermaid language rejected | Generate plain text code fallback and warning. |
 | Core | Cross-origin external image | Does not upload; emits Notion external image if usable, otherwise preserves URL as link. |
@@ -562,7 +676,7 @@ Required fixtures：
 | Core | Database target metadata | Metadata is written into the page body toggle; database properties are not created or modified. |
 | Core | Database title property discovery | Selecting a database target reads database metadata and stores the title property name / id; saving uses the stored title property. |
 | Core | Stale database target | If saved database title property, schema, or permission becomes invalid, page creation fails with target-invalid guidance. |
-| Core | Re-save same page | Creates a new Notion page each time; previous clipped pages remain unchanged. |
+| Core | Re-save same source | Creates a new Notion page each time; previous clipped pages remain unchanged. |
 | Core | Notion append batching | Writes blocks in batches of max 100. |
 | Core | Request timeout and retry | Confluence page fetch, asset download, and Notion API requests use 30s per-request timeout; network errors, 408, 429, and 5xx retry at most 2 times within the 5-minute task timeout. |
 | Core | ClipTask overall timeout | A task running longer than 5 minutes fails, releases the single-task lock, and shows retry guidance. |
@@ -572,9 +686,11 @@ Required fixtures：
 | Security | Host permission path guard | Host permission is origin-scoped; detector and REST content fetcher reject URLs outside normalized base URL path; same-origin referenced assets may be fetched. |
 | Security | Debug export absence | No debug export is available in V1; development logs redact secrets. |
 | Security | Unsupported raw HTML | Recoverable text is preserved as plain text or degradation; raw executable/renderable HTML is not emitted. |
-| Security | No Notion OAuth flow | Extension has no OAuth client ID, redirect URI, scope request, authorization-code exchange, or refresh-token handling. |
+| Security | No Notion OAuth flow | Extension has no Notion OAuth client ID, redirect URI, scope request, authorization-code exchange, or refresh-token handling. |
+| Security | No Google OAuth flow | Extension has no Google OAuth client ID, redirect URI, scope request, authorization-code exchange, refresh-token handling, or Google token storage. |
+| Security | Native host command boundary | Native bridge accepts only explicit message types and never executes arbitrary shell commands from extension input. |
 | Security | XML with external entity | Entity is not resolved; no external request happens. |
-| Security | Token exposure check | Content script receives no Notion token. |
+| Security | Token exposure check | Content script receives no Notion token or Google token. |
 
 ### 15.3 Manual E2E tests
 
@@ -590,6 +706,9 @@ Run against at least one real Confluence Server / Data Center 7.13.7 instance:
 | Real integration | Page target | Metadata toggle appears at top. |
 | Real integration | Re-save same page | A new Notion page is created; previous clipped pages remain unchanged. |
 | Real integration | Unsupported page | User sees clear unsupported-page message. |
+| Real integration | Google Docs simple document | Page saved with readable structure and `Google Docs metadata` toggle. |
+| Real integration | Google Docs image-heavy document | Uploaded images render; failed images show warning count. |
+| Real integration | Missing Google native host | User sees bridge installation guidance and no Notion page is created. |
 
 ## 16. 发布检查清单
 
@@ -599,10 +718,14 @@ Run against at least one real Confluence Server / Data Center 7.13.7 instance:
 - [ ] Extension does not include Notion OAuth client ID, redirect URI, scope request, authorization-code exchange, or refresh-token flow.
 - [ ] User can search and select a Notion page or database shared with the configured integration.
 - [ ] User can search and select an accessible Notion page or database target.
+- [ ] Extension can call the `add_to_notion_gws` Native Messaging host for Google Docs export when installed.
+- [ ] Missing Google Docs native host shows install-bridge guidance and creates no Notion page.
+- [ ] `gws` auth/export failure creates no Notion page and shows actionable guidance.
 - [ ] Selecting a database target reads and stores its title property name / id.
 - [ ] Stale database title property, schema, or permission failures show target-invalid guidance.
 - [ ] Empty Notion target list shows guidance to grant integration access in Notion.
 - [ ] Tokens stored only in `chrome.storage.local`.
+- [ ] Extension does not store or receive Google tokens.
 - [ ] Unsupported raw HTML is converted to plain text or degradation and is never emitted as executable/renderable HTML.
 - [ ] Logout clears Notion tokens/workspace/default target/last summary and keeps Confluence base URL plus host permission.
 - [ ] Content script cannot access Notion token.
@@ -615,19 +738,21 @@ Run against at least one real Confluence Server / Data Center 7.13.7 instance:
 - [ ] Asset handler may download same-origin referenced assets outside normalized base URL path.
 - [ ] Extension does not request `cookies` permission.
 - [ ] Detector supports required URL forms.
+- [ ] Google Docs detector supports `/edit`, `/preview`, and `/copy` variants with query/hash.
 - [ ] Storage fetcher uses `credentials: 'include'`.
 - [ ] XML parser blocks external entities and external resource loading.
-- [ ] Converter passes `simple`, `macro-heavy`, and `image-heavy` fixtures.
+- [ ] Google Docs HTML parser treats export HTML as untrusted input and never emits executable/renderable raw HTML.
+- [ ] Converter passes `simple`, `macro-heavy`, `image-heavy`, `google-simple`, `google-image-heavy`, and `google-structure-heavy` fixtures.
 - [ ] Macro mapper supports Mermaid, code, noformat, info, note, tip, warning, expand, Draw.io, unknown macro fallback.
 - [ ] Unknown macro fallback includes macro name and recoverable body text but does not emit macro parameters.
 - [ ] Asset handler limits uploads to concurrency 3.
-- [ ] Single asset failure degrades to Confluence link and warning.
+- [ ] Single asset failure degrades to source link and warning.
 - [ ] Cross-origin external images are not uploaded; usable URLs become external image blocks or links.
 - [ ] Files over 20 MB are skipped and preserved as Confluence links.
 - [ ] Uploaded files are attached to compatible Notion blocks within 1 hour.
 - [ ] Database target creates a new page with metadata toggle and does not modify database properties.
 - [ ] Page target writes metadata toggle.
-- [ ] Re-saving same Confluence page creates a new Notion page and leaves previous clipped pages unchanged.
+- [ ] Re-saving same source creates a new Notion page and leaves previous clipped pages unchanged.
 - [ ] Writer appends blocks in batches of max 100.
 - [ ] External requests use 30-second per-request timeouts and retry network errors, 408, 429, and 5xx at most 2 times within the task timeout.
 - [ ] ClipTask fails visibly and releases the single-task lock after 5 minutes.
